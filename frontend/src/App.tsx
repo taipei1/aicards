@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { LanguagePage } from './pages/LanguagePage';
 import { ObsidianPage } from './pages/ObsidianPage';
 import { StatsPage } from './pages/StatsPage';
@@ -8,13 +8,40 @@ type Page = 'language' | 'obsidian' | 'stats' | 'words';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('language');
+  const [dark, setDark] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    if (saved) return saved === 'dark';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('dark-mode', dark);
+    localStorage.setItem('theme', dark ? 'dark' : 'light');
+  }, [dark]);
 
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif', maxWidth: '900px', margin: '0 auto', padding: '16px' }}>
       {/* Header */}
-      <h1 style={{ fontSize: '1.5rem', marginBottom: '20px', fontWeight: 'bold' }}>
-        SRS - Spaced Repetition System
-      </h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
+          SRS - Spaced Repetition System
+        </h1>
+        <button
+          onClick={() => setDark(prev => !prev)}
+          style={{
+            fontSize: '1.3rem',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: '4px 8px',
+            lineHeight: 1,
+          }}
+          aria-label="Toggle theme"
+        >
+          {dark ? '\u2600\uFE0F' : '\uD83C\uDF19'}
+        </button>
+      </div>
 
       {/* Navigation */}
       <nav style={{ display: 'flex', gap: '4px', marginBottom: '24px', flexWrap: 'wrap' }}>

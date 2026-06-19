@@ -73,14 +73,14 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
 
   return (
     <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-      <div style={{ textAlign: 'center', marginBottom: '10px', color: '#666', fontSize: '0.85rem' }}>
+      <div style={{ textAlign: 'center', marginBottom: '10px', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
         {fmt(timer)} {!active && '(paused)'}
       </div>
 
       {/* Card */}
       <div
         style={{
-          border: '2px solid #000',
+          border: '2px solid var(--border-primary)',
           minHeight: '220px',
           display: 'flex',
           flexDirection: 'column',
@@ -98,20 +98,20 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
           <div style={{ fontSize: '2rem', fontWeight: 'bold' }}>{card.front}</div>
           <div
             onClick={(e) => { e.stopPropagation(); speak(card.front); markActive(); }}
-            style={{ color: '#666', fontSize: '0.85rem', cursor: 'pointer', marginTop: '6px' }}
+            style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', cursor: 'pointer', marginTop: '6px' }}
           >
             &#9654; replay
           </div>
         </div>
         {showBack && (
-          <div style={{ textAlign: 'center', borderTop: '1px solid #ccc', paddingTop: '14px', width: '100%' }}>
-            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#333' }}>{card.back}</div>
-            {card.hint && <div style={{ color: '#666', fontSize: '0.9rem', marginTop: '8px' }}>{card.hint}</div>}
+          <div style={{ textAlign: 'center', borderTop: '1px solid var(--border-light)', paddingTop: '14px', width: '100%' }}>
+            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>{card.back}</div>
+            {card.hint && <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '8px' }}>{card.hint}</div>}
           </div>
         )}
       </div>
 
-      {!showBack && <div style={{ textAlign: 'center', color: '#999', fontSize: '0.85rem', marginBottom: '10px' }}>Tap to reveal</div>}
+      {!showBack && <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '10px' }}>Tap to reveal</div>}
 
       {card.tags && card.tags.length > 0 && (
         <div style={{ marginBottom: '10px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
@@ -138,9 +138,9 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
 }
 
 const btnGrade: React.CSSProperties = {
-  border: '2px solid #000',
-  background: '#fff',
-  color: '#000',
+  border: '2px solid var(--border-primary)',
+  background: 'var(--bg-primary)',
+  color: 'var(--text-primary)',
   padding: '12px 4px',
   fontSize: '0.85rem',
   fontWeight: 'bold',
@@ -151,9 +151,9 @@ const btnGrade: React.CSSProperties = {
 };
 
 const btnAction: React.CSSProperties = {
-  border: '2px solid #000',
-  background: '#fff',
-  color: '#000',
+  border: '2px solid var(--border-primary)',
+  background: 'var(--bg-primary)',
+  color: 'var(--text-primary)',
   padding: '12px',
   fontSize: '0.95rem',
   fontWeight: 'bold',
@@ -163,7 +163,7 @@ const btnAction: React.CSSProperties = {
 };
 
 const tagStyle: React.CSSProperties = {
-  border: '1px solid #ccc',
+  border: '1px solid var(--border-light)',
   padding: '2px 6px',
   fontSize: '0.75rem',
   borderRadius: '3px',

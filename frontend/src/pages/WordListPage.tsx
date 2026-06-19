@@ -122,11 +122,11 @@ export function WordListPage() {
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px' }}>Loading...</div>
       ) : sorted.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+        <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
           {search ? 'No words found' : 'No words yet'}
         </div>
       ) : (
-        <div style={{ border: '1px solid #ddd', borderRadius: '4px', overflow: 'hidden' }}>
+        <div style={{ border: '1px solid var(--border-light)', borderRadius: '4px', overflow: 'hidden' }}>
           {/* Header */}
           <div style={rowStyle}>
             <div style={{ ...cellStyle, ...headerCell, flex: '0 0 36px' }}>#</div>
@@ -138,8 +138,8 @@ export function WordListPage() {
 
           {/* Rows */}
           {sorted.map((card, i) => (
-            <div key={card.id} style={{ ...rowStyle, background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
-              <div style={{ ...cellStyle, flex: '0 0 36px', color: '#999', fontSize: '0.8rem' }}>{i + 1}</div>
+            <div key={card.id} style={{ ...rowStyle, background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-muted)' }}>
+              <div style={{ ...cellStyle, flex: '0 0 36px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{i + 1}</div>
               <div
                 style={{ ...cellStyle, flex: '1 1 140px', fontWeight: 'bold', cursor: 'pointer' }}
                 onClick={() => speak(card.front)}
@@ -147,16 +147,16 @@ export function WordListPage() {
               >
                 <div style={truncateStyle}>{card.front}</div>
               </div>
-              <div style={{ ...cellStyle, flex: '1 1 140px', color: '#333' }}>
+              <div style={{ ...cellStyle, flex: '1 1 140px', color: 'var(--text-primary)' }}>
                 <div style={truncateStyle}>{card.back}</div>
               </div>
-              <div style={{ ...cellStyle, flex: '0 0 60px', color: '#999', fontSize: '0.8rem' }}>
+              <div style={{ ...cellStyle, flex: '0 0 60px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
                 {card.hint ? <div style={truncateStyle}>{card.hint}</div> : '—'}
               </div>
               <div style={{ ...cellStyle, flex: '0 0 80px' }}>
                 <div style={{ display: 'flex', gap: '4px' }}>
                   <button onClick={() => handleEdit(card)} style={btnSmall}>Edit</button>
-                  <button onClick={() => handleDeleteCard(card)} style={{ ...btnSmall, color: '#c00' }}>Del</button>
+                  <button onClick={() => handleDeleteCard(card)} style={{ ...btnSmall, color: 'var(--text-danger)' }}>Del</button>
                 </div>
               </div>
             </div>
@@ -170,7 +170,7 @@ export function WordListPage() {
 const rowStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  borderBottom: '1px solid #eee',
+  borderBottom: '1px solid var(--border-light)',
   minHeight: '40px',
 };
 
@@ -182,9 +182,9 @@ const cellStyle: React.CSSProperties = {
 const headerCell: React.CSSProperties = {
   fontWeight: 'bold',
   fontSize: '0.8rem',
-  color: '#666',
+  color: 'var(--text-secondary)',
   textTransform: 'uppercase',
-  background: '#f5f5f5',
+  background: 'var(--bg-muted)',
 };
 
 const truncateStyle: React.CSSProperties = {
@@ -197,16 +197,16 @@ const truncateStyle: React.CSSProperties = {
 const selectStyle: React.CSSProperties = {
   padding: '10px 8px',
   fontSize: '0.95rem',
-  border: '2px solid #000',
+  border: '2px solid var(--border-primary)',
   borderRadius: '4px',
   minHeight: '44px',
-  background: '#fff',
+  background: 'var(--bg-primary)',
 };
 
 const inputStyle: React.CSSProperties = {
   padding: '10px 8px',
   fontSize: '0.95rem',
-  border: '2px solid #000',
+  border: '2px solid var(--border-primary)',
   borderRadius: '4px',
   boxSizing: 'border-box',
   minHeight: '44px',
@@ -222,7 +222,7 @@ const labelStyle: React.CSSProperties = {
 const overlayStyle: React.CSSProperties = {
   position: 'fixed',
   top: 0, left: 0, right: 0, bottom: 0,
-  background: 'rgba(0,0,0,0.5)',
+  background: 'var(--overlay)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -231,8 +231,8 @@ const overlayStyle: React.CSSProperties = {
 };
 
 const modalStyle: React.CSSProperties = {
-  background: '#fff',
-  border: '2px solid #000',
+  background: 'var(--bg-primary)',
+  border: '2px solid var(--border-primary)',
   padding: '20px',
   maxWidth: '380px',
   width: '100%',
@@ -241,9 +241,9 @@ const modalStyle: React.CSSProperties = {
 
 const btnControl: React.CSSProperties = {
   flex: 1,
-  border: '2px solid #000',
-  background: '#fff',
-  color: '#000',
+  border: '2px solid var(--border-primary)',
+  background: 'var(--bg-primary)',
+  color: 'var(--text-primary)',
   padding: '12px',
   fontSize: '0.95rem',
   fontWeight: 'bold',
@@ -254,14 +254,14 @@ const btnControl: React.CSSProperties = {
 
 const btnPrimary: React.CSSProperties = {
   ...btnControl,
-  background: '#000',
-  color: '#fff',
+  background: 'var(--bg-inverse)',
+  color: 'var(--text-inverse)',
 };
 
 const btnSmall: React.CSSProperties = {
-  border: '1px solid #000',
-  background: '#fff',
-  color: '#000',
+  border: '1px solid var(--border-primary)',
+  background: 'var(--bg-primary)',
+  color: 'var(--text-primary)',
   padding: '3px 8px',
   fontSize: '0.75rem',
   cursor: 'pointer',

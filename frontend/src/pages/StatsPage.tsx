@@ -49,14 +49,14 @@ export function StatsPage() {
 
       {/* Today's stats */}
       {dailyStats && (
-        <div style={{ border: '2px solid #000', padding: '20px', marginBottom: '24px' }}>
+        <div style={{ border: '2px solid var(--border-primary)', padding: '20px', marginBottom: '24px' }}>
           <h3 style={{ marginBottom: '16px' }}>Today</h3>
           <div style={{ fontSize: '2rem', fontWeight: 'bold', marginBottom: '12px' }}>
             {dailyStats.total_minutes} min
           </div>
           {Object.keys(dailyStats.by_category).length > 0 && (
             <div>
-              <div style={{ color: '#666', marginBottom: '8px' }}>By category:</div>
+              <div style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>By category:</div>
               {Object.entries(dailyStats.by_category).map(([cat, mins]) => (
                 <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
                   <span style={{ textTransform: 'capitalize' }}>{cat}</span>
@@ -70,20 +70,20 @@ export function StatsPage() {
 
       {/* 30-day summary */}
       {summaryStats && (
-        <div style={{ border: '2px solid #000', padding: '20px' }}>
+        <div style={{ border: '2px solid var(--border-primary)', padding: '20px' }}>
           <h3 style={{ marginBottom: '16px' }}>Last {summaryStats.period_days} Days</h3>
           
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '20px' }}>
             <div>
-              <div style={{ color: '#666', fontSize: '0.9rem' }}>Total</div>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Total</div>
               <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{summaryStats.total_minutes} min</div>
             </div>
             <div>
-              <div style={{ color: '#666', fontSize: '0.9rem' }}>Daily avg</div>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Daily avg</div>
               <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{summaryStats.avg_per_day.toFixed(1)} min</div>
             </div>
             <div>
-              <div style={{ color: '#666', fontSize: '0.9rem' }}>Days tracked</div>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Days tracked</div>
               <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{summaryStats.period_days}</div>
             </div>
           </div>
@@ -91,7 +91,7 @@ export function StatsPage() {
           {/* By module */}
           {Object.keys(summaryStats.by_module).length > 0 && (
             <div style={{ marginBottom: '16px' }}>
-              <div style={{ color: '#666', marginBottom: '8px' }}>By module:</div>
+              <div style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>By module:</div>
               {Object.entries(summaryStats.by_module).map(([mod, mins]) => (
                 <div key={mod} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
                   <span style={{ textTransform: 'capitalize' }}>{mod}</span>
@@ -104,7 +104,7 @@ export function StatsPage() {
           {/* By category */}
           {Object.keys(summaryStats.by_category).length > 0 && (
             <div>
-              <div style={{ color: '#666', marginBottom: '8px' }}>By category:</div>
+              <div style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>By category:</div>
               {Object.entries(summaryStats.by_category)
                 .sort(([, a], [, b]) => b - a)
                 .slice(0, 10)
@@ -128,9 +128,9 @@ export function StatsPage() {
 }
 
 const buttonStyle: React.CSSProperties = {
-  border: '2px solid #000',
-  background: '#fff',
-  color: '#000',
+  border: '2px solid var(--border-primary)',
+  background: 'var(--bg-primary)',
+  color: 'var(--text-primary)',
   padding: '8px 16px',
   fontSize: '0.9rem',
   cursor: 'pointer',
