@@ -10,7 +10,7 @@ interface CardDisplayProps {
 }
 
 export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProps) {
-  const [showBack, setShowBack] = useState(false);
+  const [showBack, setShowBack] = useState(true);
   const [timer, setTimer] = useState(0);
   const [active, setActive] = useState(true);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -67,7 +67,7 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  useEffect(() => { setShowBack(false); }, [card.id]);
+  useEffect(() => { setShowBack(true); }, [card.id]);
 
   const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
