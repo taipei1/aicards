@@ -127,8 +127,10 @@ export function WordListPage() {
         </div>
       ) : (
         <div style={{ border: '1px solid var(--border-light)', borderRadius: '4px', overflow: 'hidden' }}>
-          {/* Header */}
-          <div style={rowStyle}>
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ minWidth: '700px' }}>
+              {/* Header */}
+              <div style={rowStyle}>
             <div style={{ ...cellStyle, ...headerCell, flex: '0 0 36px' }}>#</div>
             <div style={{ ...cellStyle, ...headerCell, flex: '1 1 140px' }}>EN</div>
             <div style={{ ...cellStyle, ...headerCell, flex: '1 1 140px' }}>RU</div>
@@ -161,6 +163,8 @@ export function WordListPage() {
               </div>
             </div>
           ))}
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -262,9 +266,9 @@ const btnSmall: React.CSSProperties = {
   border: '1px solid var(--border-primary)',
   background: 'var(--bg-primary)',
   color: 'var(--text-primary)',
-  padding: '3px 8px',
+  padding: '6px 10px',
   fontSize: '0.75rem',
   cursor: 'pointer',
   borderRadius: '3px',
-  minHeight: '28px',
+  minHeight: '36px',
 };
