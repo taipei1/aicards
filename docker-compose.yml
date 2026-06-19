@@ -4,12 +4,14 @@ services:
   postgres:
     image: ankane/pgvector
     container_name: pgvector-db
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: mysecretpassword
       POSTGRES_DB: postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -23,12 +25,17 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: srs_backend
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://postgres:mysecretpassword@postgres:5432/postgres
       DATABASE_ECHO: "false"
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
       OBSIDIAN_FOLDER_PATH: /app/obsidian-test
-      CORS_ORIGINS: '["http://localhost:3000"]'
+      SRS_TAG: ${SRS_TAG:-srs}
+      CORS_ORIGINS: '["https://translatepls.me"]'
     depends_on:
       postgres:
         condition: service_healthy
@@ -42,8 +49,9 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: srs_frontend
+    restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3006:80"
     depends_on:
       - backend
 
