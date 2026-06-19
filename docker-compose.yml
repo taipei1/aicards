@@ -51,7 +51,7 @@ services:
     container_name: srs_frontend
     restart: unless-stopped
     ports:
-      - "3006:80"
+      - "3006:3000"
     depends_on:
       - backend
 
