@@ -14,6 +14,10 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
   const [timer, setTimer] = useState(0);
   const [active, setActive] = useState(true);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [typingMode, setTypingMode] = useState(false);
+  const [inputValue, setInputValue] = useState('');
+  const [typingResult, setTypingResult] = useState<'correct' | 'incorrect' | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const inactivityRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -58,8 +62,13 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
       if (e.code === 'Digit4') { onGrade(4); markActive(); }
       if (e.code === 'KeyD') { onDelete(); markActive(); }
       if (e.code === 'KeyR') { speak(card.front); markActive(); }
+      if (e.code === 'KeyT') {
+        e.preventDefault();
+        if (!typingMode) setTypingMode(true);
+        markActive();
+      }
     },
-    [onGrade, onDelete, card.front, handleFlip, markActive]
+    [onGrade, onDelete, card.front, handleFlip, markActive, typingMode]
   );
 
   useEffect(() => {
@@ -67,7 +76,18 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  useEffect(() => { setShowBack(true); }, [card.id]);
+  useEffect(() => {
+    setShowBack(true);
+    setTypingMode(false);
+    setInputValue('');
+    setTypingResult(null);
+  }, [card.id]);
+
+  useEffect(() => {
+    if (typingMode && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [typingMode]);
 
   const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
@@ -89,7 +109,7 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
           padding: '20px',
           cursor: 'pointer',
           marginBottom: '14px',
-          userSelect: 'none',
+          userSelect: 'text',
         }}
         onClick={handleFlip}
         onTouchStart={markActive}
@@ -112,6 +132,58 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
       </div>
 
       {!showBack && <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '10px' }}>Tap to reveal</div>}
+
+      {/* Type word mode */}
+      <div style={{ marginBottom: '10px' }}>
+        {!typingMode ? (
+          <button onClick={() => { setTypingMode(true); markActive(); }} style={btnAction}>
+            ⌨️ Type word
+          </button>
+        ) : (
+          <div>
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const normalize = (s: string) => s.replace(/[^a-zA-Zа-яёА-ЯЁ]/g, '').toLowerCase();
+                  const a = normalize(inputValue);
+                  const b = normalize(card.front);
+                  if (a === b) {
+                    setTypingResult('correct');
+                  } else {
+                    setTypingResult('incorrect');
+                  }
+                }
+              }}
+              autoComplete="off"
+              style={{
+                width: '100%',
+                padding: '10px',
+                fontSize: '1.2rem',
+                border: typingResult === 'correct' ? '2px solid #4c4' : typingResult === 'incorrect' ? '2px solid #c00' : '2px solid var(--border-primary)',
+                background: typingResult === 'correct' ? '#f0fff0' : typingResult === 'incorrect' ? '#fff0f0' : 'var(--bg-primary)',
+                color: 'var(--text-primary)',
+                borderRadius: '4px',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+            {typingResult === 'incorrect' && (
+              <div style={{ marginTop: '6px', color: '#c00', fontWeight: 'bold' }}>
+                Correct: {card.front}
+              </div>
+            )}
+            <div style={{ marginTop: '6px', display: 'flex', gap: '6px' }}>
+              <button onClick={() => { setTypingMode(false); setInputValue(''); setTypingResult(null); }} style={{ ...btnAction, flex: 1 }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {card.tags && card.tags.length > 0 && (
         <div style={{ marginBottom: '10px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
