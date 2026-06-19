@@ -39,6 +39,31 @@ export function WordListPage() {
     return 0;
   });
 
+  function nextReviewText(card: Card): string {
+    if (!card.last_reviewed) return '—';
+    const due = new Date(card.last_reviewed);
+    due.setDate(due.getDate() + Math.round(card.stability));
+    const now = new Date();
+    const diff = due.getTime() - now.getTime();
+    const days = Math.round(diff / 86400000);
+    if (days <= 0) return '🔴 Due';
+    if (days === 1) return 'tomorrow';
+    if (days < 30) return `${days}d`;
+    if (days < 365) return `${Math.round(days / 30)}mo`;
+    return `${(days / 365).toFixed(1)}y`;
+  }
+
+  function nextReviewColor(card: Card): string {
+    if (!card.last_reviewed) return '#999';
+    const due = new Date(card.last_reviewed);
+    due.setDate(due.getDate() + Math.round(card.stability));
+    const diff = due.getTime() - Date.now();
+    const days = diff / 86400000;
+    if (days <= 0) return '#c00';
+    if (days < 7) return '#e68a00';
+    return '#999';
+  }
+
   const handleEdit = (card: Card) => {
     setEditingCard(card);
     setEditBack(card.back);
@@ -122,26 +147,28 @@ export function WordListPage() {
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px' }}>Loading...</div>
       ) : sorted.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+        <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
           {search ? 'No words found' : 'No words yet'}
         </div>
       ) : (
-        <div style={{ border: '1px solid var(--border-light)', borderRadius: '4px', overflow: 'hidden' }}>
-          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-            <div style={{ minWidth: '700px' }}>
-              {/* Header */}
-              <div style={rowStyle}>
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ border: '1px solid #ddd', borderRadius: '4px', overflow: 'hidden', minWidth: '650px' }}>
+          {/* Header */}
+          <div style={rowStyle}>
             <div style={{ ...cellStyle, ...headerCell, flex: '0 0 36px' }}>#</div>
             <div style={{ ...cellStyle, ...headerCell, flex: '1 1 140px' }}>EN</div>
             <div style={{ ...cellStyle, ...headerCell, flex: '1 1 140px' }}>RU</div>
+            <div style={{ ...cellStyle, ...headerCell, flex: '0 0 80px' }}>Stab</div>
+            <div style={{ ...cellStyle, ...headerCell, flex: '0 0 70px' }}>Diff</div>
+            <div style={{ ...cellStyle, ...headerCell, flex: '0 0 100px' }}>Next</div>
             <div style={{ ...cellStyle, ...headerCell, flex: '0 0 60px' }}>Hint</div>
             <div style={{ ...cellStyle, ...headerCell, flex: '0 0 80px' }}>Actions</div>
           </div>
 
           {/* Rows */}
           {sorted.map((card, i) => (
-            <div key={card.id} style={{ ...rowStyle, background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-muted)' }}>
-              <div style={{ ...cellStyle, flex: '0 0 36px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{i + 1}</div>
+            <div key={card.id} style={{ ...rowStyle, background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+              <div style={{ ...cellStyle, flex: '0 0 36px', color: '#999', fontSize: '0.8rem' }}>{i + 1}</div>
               <div
                 style={{ ...cellStyle, flex: '1 1 140px', fontWeight: 'bold', cursor: 'pointer' }}
                 onClick={() => speak(card.front)}
@@ -149,23 +176,30 @@ export function WordListPage() {
               >
                 <div style={truncateStyle}>{card.front}</div>
               </div>
-              <div style={{ ...cellStyle, flex: '1 1 140px', color: 'var(--text-primary)' }}>
+              <div style={{ ...cellStyle, flex: '1 1 140px', color: '#333' }}>
                 <div style={truncateStyle}>{card.back}</div>
               </div>
-              <div style={{ ...cellStyle, flex: '0 0 60px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+              <div style={{ ...cellStyle, flex: '0 0 80px', fontSize: '0.8rem', color: card.stability >= 120 ? '#999' : '#333' }}>
+                {card.stability.toFixed(0)}d
+              </div>
+              <div style={{ ...cellStyle, flex: '0 0 70px', fontSize: '0.8rem' }}>
+                {card.difficulty.toFixed(1)}
+              </div>
+              <div style={{ ...cellStyle, flex: '0 0 100px', fontSize: '0.75rem', color: nextReviewColor(card) }}>
+                {nextReviewText(card)}
+              </div>
+              <div style={{ ...cellStyle, flex: '0 0 60px', color: '#999', fontSize: '0.8rem' }}>
                 {card.hint ? <div style={truncateStyle}>{card.hint}</div> : '—'}
               </div>
               <div style={{ ...cellStyle, flex: '0 0 80px' }}>
                 <div style={{ display: 'flex', gap: '4px' }}>
                   <button onClick={() => handleEdit(card)} style={btnSmall}>Edit</button>
-                  <button onClick={() => handleDeleteCard(card)} style={{ ...btnSmall, color: 'var(--text-danger)' }}>Del</button>
+                  <button onClick={() => handleDeleteCard(card)} style={{ ...btnSmall, color: '#c00' }}>Del</button>
                 </div>
               </div>
             </div>
           ))}
-            </div>
-          </div>
-        </div>
+        </div></div>
       )}
     </div>
   );
@@ -174,7 +208,7 @@ export function WordListPage() {
 const rowStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  borderBottom: '1px solid var(--border-light)',
+  borderBottom: '1px solid #eee',
   minHeight: '40px',
 };
 
@@ -186,9 +220,9 @@ const cellStyle: React.CSSProperties = {
 const headerCell: React.CSSProperties = {
   fontWeight: 'bold',
   fontSize: '0.8rem',
-  color: 'var(--text-secondary)',
+  color: '#666',
   textTransform: 'uppercase',
-  background: 'var(--bg-muted)',
+  background: '#f5f5f5',
 };
 
 const truncateStyle: React.CSSProperties = {
@@ -201,16 +235,16 @@ const truncateStyle: React.CSSProperties = {
 const selectStyle: React.CSSProperties = {
   padding: '10px 8px',
   fontSize: '0.95rem',
-  border: '2px solid var(--border-primary)',
+  border: '2px solid #000',
   borderRadius: '4px',
   minHeight: '44px',
-  background: 'var(--bg-primary)',
+  background: '#fff',
 };
 
 const inputStyle: React.CSSProperties = {
   padding: '10px 8px',
   fontSize: '0.95rem',
-  border: '2px solid var(--border-primary)',
+  border: '2px solid #000',
   borderRadius: '4px',
   boxSizing: 'border-box',
   minHeight: '44px',
@@ -226,7 +260,7 @@ const labelStyle: React.CSSProperties = {
 const overlayStyle: React.CSSProperties = {
   position: 'fixed',
   top: 0, left: 0, right: 0, bottom: 0,
-  background: 'var(--overlay)',
+  background: 'rgba(0,0,0,0.5)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -235,8 +269,8 @@ const overlayStyle: React.CSSProperties = {
 };
 
 const modalStyle: React.CSSProperties = {
-  background: 'var(--bg-primary)',
-  border: '2px solid var(--border-primary)',
+  background: '#fff',
+  border: '2px solid #000',
   padding: '20px',
   maxWidth: '380px',
   width: '100%',
@@ -245,9 +279,9 @@ const modalStyle: React.CSSProperties = {
 
 const btnControl: React.CSSProperties = {
   flex: 1,
-  border: '2px solid var(--border-primary)',
-  background: 'var(--bg-primary)',
-  color: 'var(--text-primary)',
+  border: '2px solid #000',
+  background: '#fff',
+  color: '#000',
   padding: '12px',
   fontSize: '0.95rem',
   fontWeight: 'bold',
@@ -258,17 +292,17 @@ const btnControl: React.CSSProperties = {
 
 const btnPrimary: React.CSSProperties = {
   ...btnControl,
-  background: 'var(--bg-inverse)',
-  color: 'var(--text-inverse)',
+  background: '#000',
+  color: '#fff',
 };
 
 const btnSmall: React.CSSProperties = {
-  border: '1px solid var(--border-primary)',
-  background: 'var(--bg-primary)',
-  color: 'var(--text-primary)',
-  padding: '6px 10px',
+  border: '1px solid #000',
+  background: '#fff',
+  color: '#000',
+  padding: '3px 8px',
   fontSize: '0.75rem',
   cursor: 'pointer',
   borderRadius: '3px',
-  minHeight: '36px',
+  minHeight: '28px',
 };

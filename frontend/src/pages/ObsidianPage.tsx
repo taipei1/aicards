@@ -171,11 +171,11 @@ export function ObsidianPage() {
         <button onClick={loadNotes} style={buttonStyle}>
           Refresh
         </button>
-        {message && <span style={{ color: 'var(--text-secondary)' }}>{message}</span>}
+        {message && <span style={{ color: '#666' }}>{message}</span>}
       </div>
 
       {/* Session info */}
-      <div style={{ marginBottom: '16px', color: 'var(--text-secondary)' }}>
+      <div style={{ marginBottom: '16px', color: '#666' }}>
         Notes due: {notes.length}
       </div>
 
@@ -192,7 +192,7 @@ export function ObsidianPage() {
             {currentNote.tags && currentNote.tags.length > 0 && (
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 {currentNote.tags.map((tag, i) => (
-                  <span key={i} style={{ border: '1px solid var(--border-primary)', padding: '2px 8px', fontSize: '0.8rem' }}>
+                  <span key={i} style={{ border: '1px solid #000', padding: '2px 8px', fontSize: '0.8rem' }}>
                     {tag}
                   </span>
                 ))}
@@ -202,7 +202,7 @@ export function ObsidianPage() {
 
           {/* Error display */}
           {error && (
-            <div style={{ border: '2px solid var(--border-primary)', padding: '16px', marginBottom: '20px', background: 'var(--bg-primary)' }}>
+            <div style={{ border: '2px solid #000', padding: '16px', marginBottom: '20px', background: '#fff' }}>
               <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>Error:</div>
               <div>{error}</div>
               <button onClick={() => handleGenerateQuestions(currentNote.id)} style={{ ...buttonStyle, marginTop: '12px' }}>
@@ -213,21 +213,21 @@ export function ObsidianPage() {
 
           {/* Question or note preview */}
           {currentQuestion !== null && questions[currentQuestion] ? (
-            <div style={{ border: '2px solid var(--border-primary)', padding: '24px', marginBottom: '20px' }}>
+            <div style={{ border: '2px solid #000', padding: '24px', marginBottom: '20px' }}>
               <div style={{ fontSize: '1.3rem', marginBottom: '16px' }}>
                 {questions[currentQuestion].question}
               </div>
               {isRevealed && (
-                <div style={{ borderTop: '1px solid var(--border-primary)', paddingTop: '16px', color: 'var(--text-primary)' }}>
+                <div style={{ borderTop: '1px solid #000', paddingTop: '16px', color: '#333' }}>
                   {questions[currentQuestion].answer}
                 </div>
               )}
               {!isRevealed && (
-                <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Press Space to reveal</div>
+                <div style={{ color: '#666', fontSize: '0.9rem' }}>Press Space to reveal</div>
               )}
             </div>
           ) : (
-            <div style={{ border: '1px solid var(--border-light)', padding: '16px', marginBottom: '20px', color: 'var(--text-secondary)' }}>
+            <div style={{ border: '1px solid #ccc', padding: '16px', marginBottom: '20px', color: '#666' }}>
               <div style={{ fontSize: '0.9rem', marginBottom: '12px' }}>Note preview:</div>
               {currentNote.content_preview}
               <div style={{ marginTop: '16px' }}>
@@ -265,7 +265,7 @@ export function ObsidianPage() {
       )}
 
       {/* Keyboard shortcuts */}
-      <div style={{ marginTop: '24px', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+      <div style={{ marginTop: '24px', color: '#666', fontSize: '0.85rem' }}>
         <p><strong>Shortcuts:</strong> Space (reveal) | 1-4 (grade) | D (reject) | E (ask another) | S (star) | R (replay)</p>
       </div>
     </div>
@@ -273,9 +273,9 @@ export function ObsidianPage() {
 }
 
 const buttonStyle: React.CSSProperties = {
-  border: '2px solid var(--border-primary)',
-  background: 'var(--bg-primary)',
-  color: 'var(--text-primary)',
+  border: '2px solid #000',
+  background: '#fff',
+  color: '#000',
   padding: '8px 16px',
   fontSize: '0.9rem',
   cursor: 'pointer',

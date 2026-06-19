@@ -8,38 +8,43 @@ type Page = 'language' | 'obsidian' | 'stats' | 'words';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('language');
-  const [dark, setDark] = useState(() => {
-    const saved = localStorage.getItem('theme');
-    if (saved) return saved === 'dark';
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
+  const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle('dark-mode', dark);
-    localStorage.setItem('theme', dark ? 'dark' : 'light');
-  }, [dark]);
+    const saved = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const isDark = saved ? saved === 'dark' : prefersDark;
+    setDarkMode(isDark);
+    document.documentElement.classList.toggle('dark-mode', isDark);
+  }, []);
+
+  const toggleTheme = () => {
+    const next = !darkMode;
+    setDarkMode(next);
+    document.documentElement.classList.toggle('dark-mode', next);
+    localStorage.setItem('theme', next ? 'dark' : 'light');
+  };
 
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif', maxWidth: '900px', margin: '0 auto', padding: '16px' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: 0 }}>
           SRS - Spaced Repetition System
         </h1>
         <button
-          onClick={() => setDark(prev => !prev)}
+          onClick={toggleTheme}
           style={{
-            fontSize: '1.3rem',
             background: 'none',
             border: 'none',
+            fontSize: '1.5rem',
             cursor: 'pointer',
-            padding: '4px 8px',
-            lineHeight: 1,
+            padding: '4px',
+            lineHeight: '1',
           }}
           aria-label="Toggle theme"
         >
-          {dark ? '\u2600\uFE0F' : '\uD83C\uDF19'}
+          {darkMode ? '☀️' : '🌙'}
         </button>
       </div>
 

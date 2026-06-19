@@ -31,12 +31,12 @@ export function LanguagePage() {
     loadCards();
   }, [language]);
 
-  const handleGrade = async (rating: 1 | 2 | 3 | 4) => {
+  const handleGrade = async (rating: 1 | 2 | 3 | 4, timeSpent: number) => {
     const card = cards[currentIndex];
     if (!card) return;
 
     try {
-      await logReview({ card_id: card.id, rating, time_spent_seconds: 0 });
+      await logReview({ card_id: card.id, rating, time_spent_seconds: timeSpent });
 
       if (currentIndex < cards.length - 1) {
         setCurrentIndex(currentIndex + 1);
@@ -123,14 +123,14 @@ export function LanguagePage() {
           Refresh
         </button>
 
-        <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+        <span style={{ color: '#666', fontSize: '0.9rem' }}>
           {cards.length} cards
         </span>
       </div>
 
       {/* Import section */}
       {showImport && (
-        <div style={{ marginBottom: '16px', border: '2px solid var(--border-primary)', padding: '12px', borderRadius: '4px' }}>
+        <div style={{ marginBottom: '16px', border: '2px solid #000', padding: '12px', borderRadius: '4px' }}>
           <textarea
             value={importText}
             onChange={(e) => setImportText(e.target.value)}
@@ -139,13 +139,13 @@ export function LanguagePage() {
           />
           <div style={{ marginTop: '8px', display: 'flex', gap: '8px', alignItems: 'center' }}>
             <button onClick={handleImport} style={btnControl}>Import</button>
-            {importResult && <span style={{ color: 'var(--text-primary)', fontSize: '0.9rem' }}>{importResult}</span>}
+            {importResult && <span style={{ color: '#333', fontSize: '0.9rem' }}>{importResult}</span>}
           </div>
         </div>
       )}
 
       {/* Session info */}
-      <div style={{ marginBottom: '12px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+      <div style={{ marginBottom: '12px', color: '#666', fontSize: '0.9rem' }}>
         Card {currentIndex + 1} of {cards.length}
       </div>
 
@@ -175,7 +175,7 @@ export function LanguagePage() {
             <h3 style={{ marginBottom: '12px' }}>Edit Card</h3>
             <div style={{ marginBottom: '10px' }}>
               <label style={labelStyle}>Front (EN):</label>
-              <div style={{ padding: '8px', background: 'var(--bg-muted)', borderRadius: '4px', fontSize: '1.05rem' }}>
+              <div style={{ padding: '8px', background: '#f5f5f5', borderRadius: '4px', fontSize: '1.05rem' }}>
                 {editingCard.front}
               </div>
             </div>
@@ -206,7 +206,7 @@ export function LanguagePage() {
       )}
 
       {/* Shortcuts */}
-      <div style={{ marginTop: '20px', color: 'var(--text-secondary)', fontSize: '0.8rem', textAlign: 'center' }}>
+      <div style={{ marginTop: '20px', color: '#999', fontSize: '0.8rem', textAlign: 'center' }}>
         Space: flip | 1-4: grade | R: replay | D: delete
       </div>
     </div>
@@ -216,15 +216,15 @@ export function LanguagePage() {
 const selectStyle: React.CSSProperties = {
   padding: '10px 12px',
   fontSize: '1rem',
-  border: '2px solid var(--border-primary)',
+  border: '2px solid #000',
   borderRadius: '4px',
   minHeight: '44px',
 };
 
 const btnControl: React.CSSProperties = {
-  border: '2px solid var(--border-primary)',
-  background: 'var(--bg-primary)',
-  color: 'var(--text-primary)',
+  border: '2px solid #000',
+  background: '#fff',
+  color: '#000',
   padding: '10px 16px',
   fontSize: '0.9rem',
   cursor: 'pointer',
@@ -239,7 +239,7 @@ const textareaStyle: React.CSSProperties = {
   padding: '10px',
   fontSize: '0.9rem',
   fontFamily: 'monospace',
-  border: '2px solid var(--border-primary)',
+  border: '2px solid #000',
   borderRadius: '4px',
   boxSizing: 'border-box',
   resize: 'vertical',
@@ -249,7 +249,7 @@ const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 12px',
   fontSize: '1rem',
-  border: '2px solid var(--border-primary)',
+  border: '2px solid #000',
   borderRadius: '4px',
   boxSizing: 'border-box',
 };
@@ -267,7 +267,7 @@ const overlayStyle: React.CSSProperties = {
   left: 0,
   right: 0,
   bottom: 0,
-  background: 'var(--overlay)',
+  background: 'rgba(0,0,0,0.5)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -276,8 +276,8 @@ const overlayStyle: React.CSSProperties = {
 };
 
 const modalStyle: React.CSSProperties = {
-  background: 'var(--bg-primary)',
-  border: '2px solid var(--border-primary)',
+  background: '#fff',
+  border: '2px solid #000',
   padding: '20px',
   maxWidth: '400px',
   width: '100%',
@@ -286,9 +286,9 @@ const modalStyle: React.CSSProperties = {
 
 const btnPrimary: React.CSSProperties = {
   flex: 1,
-  border: '2px solid var(--border-primary)',
-  background: 'var(--bg-inverse)',
-  color: 'var(--text-inverse)',
+  border: '2px solid #000',
+  background: '#000',
+  color: '#fff',
   padding: '12px',
   fontSize: '0.95rem',
   cursor: 'pointer',
