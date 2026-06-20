@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 
 from app.database import get_db
-from app.models import Card, User
+from app.models import Card, Review, User
 from app.schemas import CardCreate, CardUpdate, CardResponse, CSVImportRequest, CSVImportResponse, CSVConflict
 from app.services.fsrs_service import fsrs_service
 from app.utils.csv_parser import CSVParser
@@ -78,9 +79,10 @@ def import_cards(
             else:
                 stability, difficulty = 1.0, 5.0
             
-            # Auto-assign basic tags
-            tags = card_data.get("hint", "").split(",") if card_data.get("hint") else []
-            tags = [t.strip().lower() for t in tags if t.strip()][:5]  # Max 5 tags
+            # Tags from parsed data or fallback
+            tags = card_data.get("tags", [])
+            if not tags:
+                tags = ["general"]
             
             # Create card
             card = Card(
@@ -88,7 +90,7 @@ def import_cards(
                 front=card_data["front"],
                 back=card_data["back"],
                 hint=card_data.get("hint") or None,
-                tags=tags if tags else ["general"],
+                tags=tags,
                 language=request.language,
                 stability=stability,
                 difficulty=difficulty,
@@ -126,17 +128,62 @@ def import_cards(
 @router.get("/due", response_model=List[CardResponse])
 def get_due_cards(
     language: str = "en",
+    tag: Optional[str] = Query(None, description="Filter by tag"),
     limit: int = 20,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """Get cards due for review (FSRS scheduling)."""
-    cards = db.query(Card).filter(
+    """Get cards due for review (FSRS scheduling). Optionally filter by tag."""
+    query = db.query(Card).filter(
         Card.user_id == user.id,
         Card.language == language
-    ).order_by(Card.stability.asc()).limit(limit).all()
+    )
     
-    return cards
+    if tag:
+        query = query.filter(Card.tags.any(tag))
+    
+    cards = query.order_by(Card.stability.asc()).limit(limit).all()
+    
+    # Attach review counts
+    result = []
+    for card in cards:
+        review_count = db.query(func.count(Review.id)).filter(
+            Review.card_id == card.id
+        ).scalar() or 0
+        card_dict = {
+            "id": card.id,
+            "front": card.front,
+            "back": card.back,
+            "hint": card.hint,
+            "tags": card.tags or [],
+            "language": card.language,
+            "stability": card.stability,
+            "difficulty": card.difficulty,
+            "last_reviewed": card.last_reviewed,
+            "created_at": card.created_at,
+            "review_count": review_count
+        }
+        result.append(card_dict)
+    
+    return result
+
+
+@router.get("/tags", response_model=List[str])
+def get_tags(
+    language: Optional[str] = Query(None, description="Filter by language"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Get all unique tags across cards."""
+    query = db.query(Card).filter(Card.user_id == user.id)
+    if language:
+        query = query.filter(Card.language == language)
+    cards = query.all()
+    tags = set()
+    for card in cards:
+        for tag in (card.tags or []):
+            tags.add(tag)
+    return sorted(tags)
 
 
 @router.get("/search", response_model=List[CardResponse])
@@ -144,7 +191,7 @@ def search_cards(
     language: str = "en",
     tag: str = None,
     search: str = None,
-    limit: int = 50,
+    limit: int = 200,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -163,7 +210,67 @@ def search_cards(
             Card.back.ilike(f"%{search}%")
         )
     
-    return query.limit(limit).all()
+    cards = query.limit(limit).all()
+    
+    # Attach review counts
+    result = []
+    for card in cards:
+        review_count = db.query(func.count(Review.id)).filter(
+            Review.card_id == card.id
+        ).scalar() or 0
+        card_dict = {
+            "id": card.id,
+            "front": card.front,
+            "back": card.back,
+            "hint": card.hint,
+            "tags": card.tags or [],
+            "language": card.language,
+            "stability": card.stability,
+            "difficulty": card.difficulty,
+            "last_reviewed": card.last_reviewed,
+            "created_at": card.created_at,
+            "review_count": review_count
+        }
+        result.append(card_dict)
+    
+    return result
+
+
+@router.get("/by-tag", response_model=List[CardResponse])
+def get_cards_by_tag(
+    language: str = "en",
+    tag: str = Query(..., description="Tag to filter by"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Get ALL cards matching a tag (no SRS limit, for emergency mode)."""
+    cards = db.query(Card).filter(
+        Card.user_id == user.id,
+        Card.language == language,
+        Card.tags.any(tag)
+    ).order_by(Card.stability.asc()).all()
+    
+    result = []
+    for card in cards:
+        review_count = db.query(func.count(Review.id)).filter(
+            Review.card_id == card.id
+        ).scalar() or 0
+        card_dict = {
+            "id": card.id,
+            "front": card.front,
+            "back": card.back,
+            "hint": card.hint,
+            "tags": card.tags or [],
+            "language": card.language,
+            "stability": card.stability,
+            "difficulty": card.difficulty,
+            "last_reviewed": card.last_reviewed,
+            "created_at": card.created_at,
+            "review_count": review_count
+        }
+        result.append(card_dict)
+    
+    return result
 
 
 @router.get("/{card_id}", response_model=CardResponse)

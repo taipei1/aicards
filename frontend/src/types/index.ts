@@ -9,6 +9,7 @@ export interface Card {
   difficulty: number;
   last_reviewed?: string;
   created_at?: string;
+  review_count?: number;
 }
 
 export interface Review {
@@ -53,4 +54,11 @@ export interface DailyStats {
   date: string;
   total_minutes: number;
   by_category: Record<string, number>;
+}
+
+export interface CardImportForm {
+  front: string;
+  back: string;
+  hint: string;
+  tags: string;
 }

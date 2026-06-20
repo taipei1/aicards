@@ -4,7 +4,7 @@ import { ObsidianPage } from './pages/ObsidianPage';
 import { StatsPage } from './pages/StatsPage';
 import { WordListPage } from './pages/WordListPage';
 
-type Page = 'language' | 'obsidian' | 'stats' | 'words';
+type Page = 'language' | 'obsidian' | 'stats' | 'words' | 'emergency';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('language');
@@ -25,19 +25,39 @@ export default function App() {
     localStorage.setItem('theme', next ? 'dark' : 'light');
   };
 
+  const navItems: { key: Page; label: string }[] = [
+    { key: 'language', label: 'Learning' },
+    { key: 'words', label: 'All Words' },
+    { key: 'emergency', label: 'Emergency' },
+    { key: 'obsidian', label: 'Obsidian' },
+    { key: 'stats', label: 'Stats' },
+  ];
+
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', maxWidth: '900px', margin: '0 auto', padding: '16px' }}>
+    <div style={{ fontFamily: 'system-ui, sans-serif', maxWidth: '960px', margin: '0 auto', padding: '12px' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: 0 }}>
-          SRS - Spaced Repetition System
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: '16px',
+        flexWrap: 'wrap',
+        gap: '8px',
+      }}>
+        <h1 style={{
+          fontSize: '1.3rem',
+          fontWeight: 'bold',
+          margin: 0,
+          color: 'var(--text-primary)',
+        }}>
+          SRS
         </h1>
         <button
           onClick={toggleTheme}
           style={{
             background: 'none',
             border: 'none',
-            fontSize: '1.5rem',
+            fontSize: '1.3rem',
             cursor: 'pointer',
             padding: '4px',
             lineHeight: '1',
@@ -49,26 +69,27 @@ export default function App() {
       </div>
 
       {/* Navigation */}
-      <nav style={{ display: 'flex', gap: '4px', marginBottom: '24px', flexWrap: 'wrap' }}>
-        {([
-          { key: 'language', label: 'Languages' },
-          { key: 'words', label: 'All Words' },
-          { key: 'obsidian', label: 'Obsidian' },
-          { key: 'stats', label: 'Stats' },
-        ] as { key: Page; label: string }[]).map(({ key, label }) => (
+      <nav style={{
+        display: 'flex',
+        gap: '4px',
+        marginBottom: '20px',
+        flexWrap: 'wrap',
+      }}>
+        {navItems.map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setCurrentPage(key)}
             style={{
-              padding: '10px 16px',
-              border: '2px solid #000',
-              background: currentPage === key ? '#000' : '#fff',
-              color: currentPage === key ? '#fff' : '#000',
+              padding: '8px 12px',
+              border: '2px solid var(--border-primary)',
+              background: currentPage === key ? 'var(--text-primary)' : 'var(--bg-primary)',
+              color: currentPage === key ? 'var(--bg-primary)' : 'var(--text-primary)',
               cursor: 'pointer',
               fontWeight: 'bold',
-              fontSize: '0.9rem',
-              minHeight: '44px',
+              fontSize: '0.85rem',
+              minHeight: '40px',
               borderRadius: '4px',
+              flex: '0 1 auto',
             }}
           >
             {label}
@@ -77,7 +98,8 @@ export default function App() {
       </nav>
 
       {/* Page content */}
-      {currentPage === 'language' && <LanguagePage />}
+      {currentPage === 'language' && <LanguagePage mode="normal" />}
+      {currentPage === 'emergency' && <LanguagePage mode="emergency" />}
       {currentPage === 'words' && <WordListPage />}
       {currentPage === 'obsidian' && <ObsidianPage />}
       {currentPage === 'stats' && <StatsPage />}

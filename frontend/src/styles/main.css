@@ -18,17 +18,18 @@
   --bg-danger: #fff0f0;
   --text-danger: #cc0000;
   --bg-success: #f0fff0;
-  --text-success: #4c4;
+  --text-success: #2a8a2a;
   --overlay: rgba(0,0,0,0.5);
   --input-bg: #ffffff;
   --input-border: #000000;
+  --table-stripe: #fafafa;
 }
 
 .dark-mode {
   --bg-primary: #1a1a2e;
   --text-primary: #e0e0e0;
-  --text-secondary: #888888;
-  --border-primary: #555555;
+  --text-secondary: #999999;
+  --border-primary: #666666;
   --border-light: #333333;
   --bg-muted: #16213e;
   --bg-inverse: #e0e0e0;
@@ -40,17 +41,13 @@
   --text-success: #66cc66;
   --overlay: rgba(0,0,0,0.7);
   --input-bg: #16213e;
-  --input-border: #555555;
+  --input-border: #666666;
+  --table-stripe: #1e1e3a;
 }
 
 html.dark-mode body {
   background-color: var(--bg-primary) !important;
   color: var(--text-primary) !important;
-}
-
-html.dark-mode button {
-  background-color: var(--bg-inverse) !important;
-  color: var(--text-inverse) !important;
 }
 
 body {
@@ -74,23 +71,25 @@ h1 {
   font-weight: 700;
 }
 
+h2 {
+  color: var(--text-primary);
+}
+
 p {
   font-size: 1rem;
 }
 
 button {
-  background-color: #000000;
-  color: #ffffff;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.875rem;
   transition: opacity 0.2s;
+  font-family: inherit;
 }
 
 button:hover {
   opacity: 0.8;
+}
+
+select, input, textarea {
+  font-family: inherit;
 }
 
 /* Mobile adjustments */
@@ -103,13 +102,7 @@ button:hover {
     font-size: 1.4rem;
   }
 
-  button {
-    min-height: 44px;
-    padding: 10px 16px;
-    font-size: 0.95rem;
-  }
-
-  input, select, textarea {
+  input, select, textarea, button {
     font-size: 16px !important;
     min-height: 44px;
   }

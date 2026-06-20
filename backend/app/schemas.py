@@ -27,6 +27,7 @@ class CardResponse(BaseModel):
     difficulty: float
     last_reviewed: Optional[datetime] = None
     created_at: Optional[datetime] = None
+    review_count: int = 0
     
     class Config:
         from_attributes = True
