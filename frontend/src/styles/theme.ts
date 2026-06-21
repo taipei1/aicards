@@ -35,8 +35,9 @@ export const btn: CSSProperties = {
 
 export const btnPrimary: CSSProperties = {
   ...btn,
-  background: colors.text,
-  color: colors.bg,
+  border: 'none',
+  background: t('accent'),
+  color: t('text-on-accent'),
 };
 
 export const btnSmall: CSSProperties = {

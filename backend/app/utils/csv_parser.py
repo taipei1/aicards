@@ -18,11 +18,8 @@ class CSVParser:
             back = (row.get("back") or row.get("translation") or "").strip()
             hint = (row.get("hint") or row.get("подсказка") or "").strip()
             
-            # Extract hashtags from tags column or from hint
             tags_raw = (row.get("tags") or "").strip()
             tags = list(dict.fromkeys(t.strip().lower() for t in re.findall(r'#(\w+)', tags_raw)))
-            if not tags:
-                tags = list(dict.fromkeys(t.strip().lower() for t in re.findall(r'#(\w+)', hint)))
             
             cards.append({
                 "front": front,

@@ -23,26 +23,32 @@
   --input-bg: #ffffff;
   --input-border: #000000;
   --table-stripe: #fafafa;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --text-on-accent: #ffffff;
 }
 
 .dark-mode {
-  --bg-primary: #1a1a2e;
+  --bg-primary: #111111;
   --text-primary: #e0e0e0;
   --text-secondary: #999999;
-  --border-primary: #666666;
-  --border-light: #333333;
-  --bg-muted: #16213e;
+  --border-primary: #444444;
+  --border-light: #222222;
+  --bg-muted: #1a1a1a;
   --bg-inverse: #e0e0e0;
-  --text-inverse: #1a1a2e;
-  --bg-tag: #2a2a4a;
-  --bg-danger: #3a1a1a;
+  --text-inverse: #111111;
+  --bg-tag: #222222;
+  --bg-danger: #2a1010;
   --text-danger: #ff6666;
-  --bg-success: #1a3a1a;
+  --bg-success: #102a10;
   --text-success: #66cc66;
-  --overlay: rgba(0,0,0,0.7);
-  --input-bg: #16213e;
-  --input-border: #666666;
-  --table-stripe: #1e1e3a;
+  --overlay: rgba(0,0,0,0.8);
+  --input-bg: #1a1a1a;
+  --input-border: #444444;
+  --table-stripe: #181818;
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --text-on-accent: #ffffff;
 }
 
 html.dark-mode body {

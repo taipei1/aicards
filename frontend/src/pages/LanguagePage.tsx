@@ -5,7 +5,7 @@ import {
 } from '../services/api';
 import { CardDisplay } from '../components/CardDisplay';
 import type { Card } from '../types';
-import { select, input, label, overlay, modal, btnPrimary, btn, textarea } from '../styles/theme';
+import { select, input, label, overlay, modal, btnPrimary, btn, textarea, btnSmall } from '../styles/theme';
 
 interface Props {
   mode: 'normal' | 'emergency';
@@ -167,7 +167,7 @@ export function LanguagePage({ mode }: Props) {
         front: importFront.trim(),
         back: importBack.trim(),
         hint: importHint.trim() || undefined,
-        tags: parsedTags.length > 0 ? parsedTags : ['general'],
+        tags: parsedTags,
         language,
       });
       setImportFront('');
@@ -209,17 +209,17 @@ export function LanguagePage({ mode }: Props) {
         <select
           value={selectedTag}
           onChange={(e) => setSelectedTag(e.target.value)}
-          style={select}
+          style={{ ...select, width: 'auto' }}
         >
           <option value="">All tags</option>
           {tags.map(t => <option key={t} value={t}>#{t}</option>)}
         </select>
 
-        <button onClick={() => setShowImport(!showImport)} style={btnPrimary}>
+        <button onClick={() => setShowImport(!showImport)} style={btn}>
           {showImport ? 'Hide Import' : mode === 'emergency' ? '+ Add Word' : 'Import'}
         </button>
 
-        <button onClick={loadCards} style={btnPrimary}>
+        <button onClick={loadCards} style={btn}>
           Refresh
         </button>
 

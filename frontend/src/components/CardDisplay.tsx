@@ -93,6 +93,8 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
       if (e.code === 'Space') { e.preventDefault(); handleFlip(); }
       if (e.code === 'Digit1') { onGrade(1, getTimeSpent()); }
       if (e.code === 'Digit2') { onGrade(2, getTimeSpent()); }
@@ -130,7 +132,7 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
   const displayBack = isReverse ? card.front : card.back;
 
   return (
-    <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+    <div style={{ maxWidth: '800px', margin: '0 auto' }}>
       {/* Timer */}
       <div style={{
         textAlign: 'center',
@@ -166,7 +168,7 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
       >
         <div style={{ textAlign: 'center', marginBottom: showBack ? '16px' : '0' }}>
           <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>
-            {showBack ? displayBack : displayFront}
+            {displayFront}
           </div>
           {!isReverse && (
             <div style={{ marginTop: '8px', display: 'flex', gap: '8px', justifyContent: 'center' }}>
