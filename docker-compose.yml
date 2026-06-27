@@ -1,37 +1,22 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: ankane/pgvector
-    container_name: pgvector-db
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: mysecretpassword
-      POSTGRES_DB: postgres
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: srs_backend
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://postgres:mysecretpassword@postgres:5432/postgres
+      DATABASE_URL: postgresql://pgadmin:tWLhUy6pzs2KjtKOl2ucf-v2@azure-db-lang-study.postgres.database.azure.com:5432/aicards?sslmode=require
       DATABASE_ECHO: "false"
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
       OBSIDIAN_FOLDER_PATH: /app/obsidian-test
-      CORS_ORIGINS: '["http://localhost:3000"]'
-    depends_on:
-      postgres:
-        condition: service_healthy
+      SRS_TAG: ${SRS_TAG:-srs}
+      CORS_ORIGINS: '["https://translatepls.me"]'
     ports:
       - "8000:8000"
     volumes:
@@ -42,10 +27,6 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: srs_frontend
+    restart: unless-stopped
     ports:
-      - "3000:3000"
-    depends_on:
-      - backend
-
-volumes:
-  postgres_data:
+      - "3006:3000"

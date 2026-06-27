@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Card, ReviewCreate, ReviewResponse, CSVImportRequest, CSVImportResponse } from '../types';
+import type { Card, ReviewCreate, ReviewResponse, CSVImportRequest, CSVImportResponse, QueueItem } from '../types';
 
 const API_URL = '/api';
 
@@ -12,8 +12,22 @@ const api = axios.create({
 
 // ============ CARDS API ============
 
-export async function getCardsDue(language: string, limit: number = 20): Promise<Card[]> {
-  const res = await api.get('/cards/due', { params: { language, limit } });
+export async function getCardsDue(language: string, tag?: string, limit: number = 20): Promise<QueueItem[]> {
+  const params: Record<string, any> = { language, limit };
+  if (tag) params.tag = tag;
+  const res = await api.get('/cards/due', { params });
+  return res.data;
+}
+
+export async function getCardsByTag(language: string, tag: string): Promise<Card[]> {
+  const res = await api.get('/cards/by-tag', { params: { language, tag } });
+  return res.data;
+}
+
+export async function getAllTags(language?: string): Promise<string[]> {
+  const params: Record<string, any> = {};
+  if (language) params.language = language;
+  const res = await api.get('/cards/tags', { params });
   return res.data;
 }
 
@@ -21,7 +35,7 @@ export async function searchCards(
   language: string,
   tag?: string,
   search?: string,
-  limit: number = 50
+  limit: number = 200
 ): Promise<Card[]> {
   const params: Record<string, any> = { language, limit };
   if (tag) params.tag = tag;
@@ -67,6 +81,11 @@ export async function importCards(data: CSVImportRequest): Promise<CSVImportResp
 
 export async function logReview(review: ReviewCreate): Promise<ReviewResponse> {
   const res = await api.post('/reviews/', review);
+  return res.data;
+}
+
+export async function logReverseReview(review: ReviewCreate): Promise<ReviewResponse> {
+  const res = await api.post('/reviews/reverse', review);
   return res.data;
 }
 

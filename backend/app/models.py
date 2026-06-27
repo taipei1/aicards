@@ -37,6 +37,7 @@ class Card(Base):
     
     user = relationship("User", back_populates="cards")
     reviews = relationship("Review", back_populates="card", cascade="all, delete-orphan")
+    reverse = relationship("CardReverse", back_populates="card", uselist=False, cascade="all, delete-orphan")
     
     __table_args__ = (
         UniqueConstraint('user_id', 'front', 'language', name='uq_card_user_front_lang'),
@@ -134,7 +135,7 @@ class ObsidianReview(Base):
 
 class SessionStats(Base):
     __tablename__ = "session_stats"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     session_date = Column(String(10), nullable=False)  # YYYY-MM-DD
@@ -149,4 +150,24 @@ class SessionStats(Base):
     __table_args__ = (
         UniqueConstraint('user_id', 'session_date', 'module_type', 'category', name='uq_stats_unique'),
         Index('idx_stats_user_date', 'user_id', 'session_date'),
+    )
+
+
+class CardReverse(Base):
+    __tablename__ = "card_reverses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    card_id = Column(Integer, ForeignKey("cards.id", ondelete="CASCADE"), nullable=False)
+    stability = Column(Float, default=1.0)
+    difficulty = Column(Float, default=5.0)
+    last_reviewed = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    card = relationship("Card", back_populates="reverse")
+    # No direct FK to users — user is accessed through card.user
+
+    __table_args__ = (
+        UniqueConstraint('card_id', name='uq_reverse_card'),
+        Index('idx_reverse_card', 'card_id'),
+        Index('idx_reverse_due', 'card_id', 'last_reviewed', 'stability'),
     )

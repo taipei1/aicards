@@ -27,6 +27,7 @@ class CardResponse(BaseModel):
     difficulty: float
     last_reviewed: Optional[datetime] = None
     created_at: Optional[datetime] = None
+    review_count: int = 0
     
     class Config:
         from_attributes = True
@@ -74,3 +75,47 @@ class SummaryStatsResponse(BaseModel):
     avg_per_day: float
     by_module: dict
     by_category: dict
+
+
+# ============ REVERSE CARD SCHEMAS ============
+
+class ReverseCardResponse(BaseModel):
+    """A reverse card — shows back as question, front as answer."""
+    id: int
+    card_id: int
+    front: str  # Same as card.front (answer in target language)
+    back: str   # Same as card.back (question in native language)
+    hint: Optional[str] = None
+    tags: List[str] = []
+    language: str
+    stability: float
+    difficulty: float
+    last_reviewed: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    review_count: int = 0
+    is_reverse: bool = True
+    card_front: str  # Original card.front
+    card_back: str   # Original card.back
+
+    class Config:
+        from_attributes = True
+
+
+class QueueItem(BaseModel):
+    """Unified card in the review queue — either normal or reverse."""
+    id: int
+    front: str
+    back: str
+    hint: Optional[str] = None
+    tags: List[str] = []
+    language: str
+    stability: float
+    difficulty: float
+    last_reviewed: Optional[datetime] = None
+    review_count: int = 0
+    is_reverse: bool = False
+    # For reverse cards, card_id is the original card.id
+    card_id: int
+    # For normal cards, these match front/back
+    card_front: str
+    card_back: str

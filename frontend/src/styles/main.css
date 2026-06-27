@@ -5,12 +5,64 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+:root {
+  --bg-primary: #ffffff;
+  --text-primary: #000000;
+  --text-secondary: #666666;
+  --border-primary: #000000;
+  --border-light: #dddddd;
+  --bg-muted: #f5f5f5;
+  --bg-inverse: #000000;
+  --text-inverse: #ffffff;
+  --bg-tag: #eeeeee;
+  --bg-danger: #fff0f0;
+  --text-danger: #cc0000;
+  --bg-success: #f0fff0;
+  --text-success: #2a8a2a;
+  --overlay: rgba(0,0,0,0.5);
+  --input-bg: #ffffff;
+  --input-border: #000000;
+  --table-stripe: #fafafa;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --text-on-accent: #ffffff;
+}
+
+.dark-mode {
+  --bg-primary: #111111;
+  --text-primary: #e0e0e0;
+  --text-secondary: #999999;
+  --border-primary: #444444;
+  --border-light: #222222;
+  --bg-muted: #1a1a1a;
+  --bg-inverse: #e0e0e0;
+  --text-inverse: #111111;
+  --bg-tag: #222222;
+  --bg-danger: #2a1010;
+  --text-danger: #ff6666;
+  --bg-success: #102a10;
+  --text-success: #66cc66;
+  --overlay: rgba(0,0,0,0.8);
+  --input-bg: #1a1a1a;
+  --input-border: #444444;
+  --table-stripe: #181818;
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --text-on-accent: #ffffff;
+}
+
+html.dark-mode body {
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background-color: #ffffff;
-  color: #000000;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 .container {
@@ -25,23 +77,25 @@ h1 {
   font-weight: 700;
 }
 
+h2 {
+  color: var(--text-primary);
+}
+
 p {
   font-size: 1rem;
 }
 
 button {
-  background-color: #000000;
-  color: #ffffff;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.875rem;
   transition: opacity 0.2s;
+  font-family: inherit;
 }
 
 button:hover {
   opacity: 0.8;
+}
+
+select, input, textarea {
+  font-family: inherit;
 }
 
 /* Mobile adjustments */
@@ -54,13 +108,7 @@ button:hover {
     font-size: 1.4rem;
   }
 
-  button {
-    min-height: 44px;
-    padding: 10px 16px;
-    font-size: 0.95rem;
-  }
-
-  input, select, textarea {
+  input, select, textarea, button {
     font-size: 16px !important;
     min-height: 44px;
   }
