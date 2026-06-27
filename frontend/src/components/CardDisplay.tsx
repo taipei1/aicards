@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { Card } from '../types';
+import type { QueueItem } from '../types';
 import { speak, speakSlow } from '../utils/tts';
 import { btnGrade, cardBox, tagStyle } from '../styles/theme';
 
@@ -13,25 +13,21 @@ function lang(locale: string): string {
 }
 
 interface CardDisplayProps {
-  card: Card;
+  item: QueueItem;
   onGrade: (rating: 1 | 2 | 3 | 4, timeSpent: number) => void;
   onDelete: () => void;
-  onEdit?: (card: Card) => void;
+  onEdit?: (item: QueueItem) => void;
 }
 
 function normalizeWord(s: string): string {
   return s.replace(/[^a-zA-Zа-яёА-ЯЁ]/g, '').toLowerCase();
 }
 
-const REVERSE_THRESHOLD = 21;
-
-export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProps) {
+export function CardDisplay({ item, onGrade, onDelete, onEdit }: CardDisplayProps) {
   const [showBack, setShowBack] = useState(false);
   const [timer, setTimer] = useState(30);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef(Date.now());
-
-  const isReverse = card.stability >= REVERSE_THRESHOLD;
 
   // Typing mode
   const [typingMode, setTypingMode] = useState(false);
@@ -39,11 +35,16 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
   const [typingResult, setTypingResult] = useState<'correct' | 'incorrect' | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Auto-speak when card loads: for reverse speak the target language word, not Russian
   useEffect(() => {
     setTimer(30);
     setShowBack(false);
     startTimeRef.current = Date.now();
-    setTimeout(() => speak(isReverse ? card.back : card.front, lang(card.language)), 300);
+    setTimeout(() => {
+      if (!item.is_reverse) {
+        speak(item.front, lang(item.language));
+      }
+    }, 300);
 
     timerRef.current = setInterval(() => {
       setTimer((t) => {
@@ -59,14 +60,14 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [card.id]);
+  }, [item.id]);
 
   useEffect(() => {
     setTypingMode(false);
     setInputValue('');
     setTypingResult(null);
     setShowBack(false);
-  }, [card.id]);
+  }, [item.id]);
 
   useEffect(() => {
     if (typingMode && inputRef.current) {
@@ -75,16 +76,22 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
   }, [typingMode]);
 
   const playNormal = useCallback((text: string) => {
-    speak(text, lang(card.language));
-  }, [card.language]);
+    speak(text, lang(item.language));
+  }, [item.language]);
 
   const playSlow = useCallback((text: string) => {
-    speakSlow(text, lang(card.language));
-  }, [card.language]);
+    speakSlow(text, lang(item.language));
+  }, [item.language]);
 
+  // On flip: for reverse cards, speak the target language word (item.back)
   const handleFlip = useCallback(() => {
-    setShowBack((prev) => !prev);
-  }, []);
+    setShowBack((prev) => {
+      if (!prev && item.is_reverse) {
+        setTimeout(() => speak(item.back, lang(item.language)), 100);
+      }
+      return !prev;
+    });
+  }, [item.is_reverse, item.back, item.language]);
 
   const getTimeSpent = () => {
     const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
@@ -101,13 +108,13 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
       if (e.code === 'Digit3') { onGrade(3, getTimeSpent()); }
       if (e.code === 'Digit4') { onGrade(4, getTimeSpent()); }
       if (e.code === 'KeyD') { onDelete(); }
-      if (e.code === 'KeyR') { speak(isReverse ? card.back : card.front, lang(card.language)); }
+      if (e.code === 'KeyR') { speak(item.is_reverse ? item.back : item.front, lang(item.language)); }
       if (e.code === 'KeyT') {
         e.preventDefault();
         if (!typingMode) setTypingMode(true);
       }
     },
-    [onGrade, onDelete, handleFlip, typingMode, isReverse, card.back, card.front, card.language]
+    [onGrade, onDelete, handleFlip, typingMode, item]
   );
 
   useEffect(() => {
@@ -119,17 +126,17 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
 
   const handleCheckAnswer = () => {
     const a = normalizeWord(inputValue);
-    const target = card.front;
-    const b = normalizeWord(target);
-    if (a === b) {
+    const expected = normalizeWord(item.is_reverse ? item.back : item.front);
+    if (a === expected) {
       setTypingResult('correct');
     } else {
       setTypingResult('incorrect');
     }
   };
 
-  const displayFront = isReverse ? card.back : card.front;
-  const displayBack = isReverse ? card.front : card.back;
+  // TTS — for reverse cards say the target language word (item.back)
+  const sayWord = () => speak(item.is_reverse ? item.back : item.front, lang(item.language));
+  const sayWordSlow = () => speakSlow(item.is_reverse ? item.back : item.front, lang(item.language));
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto' }}>
@@ -144,8 +151,8 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
         ⏱ {fmt(timer)}
       </div>
 
-      {/* Mode indicator */}
-      {isReverse && (
+      {/* Mode indicator for reverse cards */}
+      {item.is_reverse && (
         <div style={{
           textAlign: 'center',
           marginBottom: '8px',
@@ -157,7 +164,7 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
           display: 'inline-block',
           width: '100%',
         }}>
-          Reverse mode: translate from Russian
+          Reverse: translate {item.card_back} → {item.card_front}
         </div>
       )}
 
@@ -168,24 +175,22 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
       >
         <div style={{ textAlign: 'center', marginBottom: showBack ? '16px' : '0' }}>
           <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>
-            {displayFront}
+            {item.front}
           </div>
-          {!isReverse && (
-            <div style={{ marginTop: '8px', display: 'flex', gap: '8px', justifyContent: 'center' }}>
-              <span
-                onClick={(e) => { e.stopPropagation(); playNormal(card.front); }}
-                style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', cursor: 'pointer' }}
-              >
-                &#9654; replay
-              </span>
-              <span
-                onClick={(e) => { e.stopPropagation(); playSlow(card.front); }}
-                style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', cursor: 'pointer' }}
-              >
-                &#9654;&#9654; slow
-              </span>
-            </div>
-          )}
+          <div style={{ marginTop: '8px', display: 'flex', gap: '8px', justifyContent: 'center' }}>
+            <span
+              onClick={(e) => { e.stopPropagation(); sayWord(); }}
+              style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', cursor: 'pointer' }}
+            >
+              &#9654; replay
+            </span>
+            <span
+              onClick={(e) => { e.stopPropagation(); sayWordSlow(); }}
+              style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', cursor: 'pointer' }}
+            >
+              &#9654;&#9654; slow
+            </span>
+          </div>
         </div>
         {showBack && (
           <div style={{
@@ -194,21 +199,13 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
             paddingTop: '14px',
             width: '100%',
           }}>
-            {isReverse ? (
-              <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>
-                {card.front}
+            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>
+              {item.back}
+            </div>
+            {item.hint && (
+              <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '8px' }}>
+                💡 {item.hint}
               </div>
-            ) : (
-              <>
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>
-                  {card.back}
-                </div>
-                {card.hint && (
-                  <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '8px' }}>
-                    {card.hint}
-                  </div>
-                )}
-              </>
             )}
           </div>
         )}
@@ -245,7 +242,11 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
                 if (typingResult) setTypingResult(null);
               }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleCheckAnswer();
+                if (e.key === 'Enter') {
+                  handleCheckAnswer();
+                } else if (e.key === 'Backspace' && inputValue === '') {
+                  setTypingMode(false);
+                }
               }}
               autoComplete="off"
               style={{
@@ -266,7 +267,7 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
             />
             {typingResult === 'incorrect' && (
               <div style={{ marginTop: '6px', color: 'var(--text-danger)', fontWeight: 'bold', fontSize: '1.1rem' }}>
-                ✗ Correct: {displayFront}
+                ✗ Correct: {item.back}
               </div>
             )}
             {typingResult === 'correct' && (
@@ -287,9 +288,9 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
       </div>
 
       {/* Tags */}
-      {card.tags && card.tags.length > 0 && (
+      {item.tags && item.tags.length > 0 && (
         <div style={{ marginBottom: '10px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-          {card.tags.map((tag, i) => <span key={i} style={tagStyle}>#{tag}</span>)}
+          {item.tags.map((tag, i) => <span key={i} style={tagStyle}>#{tag}</span>)}
         </div>
       )}
 
@@ -305,7 +306,7 @@ export function CardDisplay({ card, onGrade, onDelete, onEdit }: CardDisplayProp
       {/* Actions */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
         <button onClick={onDelete} style={btnGrade}>Delete</button>
-        {onEdit && <button onClick={() => onEdit(card)} style={btnGrade}>Edit</button>}
+        {onEdit && <button onClick={() => onEdit(item)} style={btnGrade}>Edit</button>}
       </div>
     </div>
   );

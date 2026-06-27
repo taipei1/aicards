@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   getCardsDue, getCardsByTag, getAllTags,
-  importCards, deleteCard, logReview, updateCard, createCard,
+  importCards, deleteCard, logReview, logReverseReview, updateCard, createCard,
 } from '../services/api';
 import { CardDisplay } from '../components/CardDisplay';
-import type { Card } from '../types';
+import type { Card, QueueItem } from '../types';
 import { select, input, label, overlay, modal, btnPrimary, btn, textarea, btnSmall } from '../styles/theme';
 
 interface Props {
@@ -12,7 +12,7 @@ interface Props {
 }
 
 export function LanguagePage({ mode }: Props) {
-  const [cards, setCards] = useState<Card[]>([]);
+  const [items, setItems] = useState<QueueItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [language, setLanguage] = useState('en');
   const [tags, setTags] = useState<string[]>([]);
@@ -28,7 +28,7 @@ export function LanguagePage({ mode }: Props) {
   const [importTags, setImportTags] = useState('');
 
   // Edit modal
-  const [editingCard, setEditingCard] = useState<Card | null>(null);
+  const [editingItem, setEditingItem] = useState<QueueItem | null>(null);
   const [editBack, setEditBack] = useState('');
   const [editHint, setEditHint] = useState('');
   const [editTags, setEditTags] = useState('');
@@ -38,30 +38,47 @@ export function LanguagePage({ mode }: Props) {
   const [csvResult, setCsvResult] = useState('');
 
   // Stats
-  const [sessionStats, setSessionStats] = useState({ total: 0, again: 0, hard: 0, good: 0, easy: 0 });
+  const [sessionStats, setSessionStats] = useState({ total: 0, again: 0, hard: 0, good: 0, easy: 0, reverse: 0 });
 
   // Load tags
   useEffect(() => {
     getAllTags(language).then(setTags).catch(() => {});
   }, [language]);
 
-  const loadCards = async () => {
+  const loadItems = async () => {
     if (mode === 'emergency' && !selectedTag) {
-      setCards([]);
+      setItems([]);
       setCurrentIndex(0);
       return;
     }
     setLoading(true);
     try {
-      let result: Card[];
+      let result: QueueItem[];
       if (mode === 'emergency' && selectedTag) {
-        result = await getCardsByTag(language, selectedTag);
+        // For emergency mode — get cards by tag, wrap as QueueItem
+        const cards = await getCardsByTag(language, selectedTag);
+        result = cards.map(c => ({
+          id: c.id,
+          front: c.front,
+          back: c.back,
+          hint: c.hint,
+          tags: c.tags,
+          language: c.language,
+          stability: c.stability,
+          difficulty: c.difficulty,
+          last_reviewed: c.last_reviewed,
+          review_count: c.review_count || 0,
+          is_reverse: false,
+          card_id: c.id,
+          card_front: c.front,
+          card_back: c.back,
+        }));
       } else {
         result = await getCardsDue(language, selectedTag || undefined, 50);
       }
-      setCards(result);
+      setItems(result);
       setCurrentIndex(0);
-      setSessionStats({ total: 0, again: 0, hard: 0, good: 0, easy: 0 });
+      setSessionStats({ total: 0, again: 0, hard: 0, good: 0, easy: 0, reverse: 0 });
     } catch (err) {
       console.error('Failed to load cards:', err);
     }
@@ -69,12 +86,12 @@ export function LanguagePage({ mode }: Props) {
   };
 
   useEffect(() => {
-    loadCards();
+    loadItems();
   }, [language, selectedTag, mode]);
 
   const handleGrade = useCallback(async (rating: 1 | 2 | 3 | 4, timeSpent: number) => {
-    const card = cards[currentIndex];
-    if (!card) return;
+    const item = items[currentIndex];
+    if (!item) return;
 
     setSessionStats(prev => ({
       ...prev,
@@ -83,75 +100,81 @@ export function LanguagePage({ mode }: Props) {
       hard: prev.hard + (rating === 2 ? 1 : 0),
       good: prev.good + (rating === 3 ? 1 : 0),
       easy: prev.easy + (rating === 4 ? 1 : 0),
+      reverse: prev.reverse + (item.is_reverse ? 1 : 0),
     }));
 
     try {
-      if (mode !== 'emergency') {
-        await logReview({ card_id: card.id, rating, time_spent_seconds: timeSpent });
+      // For reverse cards, use /reviews/reverse endpoint
+      if (item.is_reverse) {
+        if (mode !== 'emergency') {
+          await logReverseReview({ card_id: item.card_id, rating, time_spent_seconds: timeSpent });
+        }
+      } else {
+        if (mode !== 'emergency') {
+          await logReview({ card_id: item.id, rating, time_spent_seconds: timeSpent });
+        }
       }
 
       if (mode === 'emergency') {
-        // In emergency mode, "Again" (1) sends card back to queue
         if (rating === 1) {
-          const newCards = [...cards];
-          const removed = newCards.splice(currentIndex, 1)[0];
-          newCards.push(removed);
-          setCards(newCards);
+          const newItems = [...items];
+          const removed = newItems.splice(currentIndex, 1)[0];
+          newItems.push(removed);
+          setItems(newItems);
         } else {
-          // Remove card from queue
-          if (currentIndex < cards.length - 1) {
+          if (currentIndex < items.length - 1) {
             setCurrentIndex(currentIndex + 1);
           } else {
-            setCards(prev => prev.filter((_, i) => i !== currentIndex));
-            if (currentIndex >= cards.length - 1) setCurrentIndex(Math.max(0, cards.length - 2));
+            setItems(prev => prev.filter((_, i) => i !== currentIndex));
+            if (currentIndex >= items.length - 1) setCurrentIndex(Math.max(0, items.length - 2));
           }
         }
       } else {
-        if (currentIndex < cards.length - 1) {
+        if (currentIndex < items.length - 1) {
           setCurrentIndex(currentIndex + 1);
         } else {
-          await loadCards();
+          await loadItems();
         }
       }
     } catch (err) {
       console.error('Failed to log review:', err);
     }
-  }, [cards, currentIndex, mode, language, selectedTag]);
+  }, [items, currentIndex, mode, language, selectedTag]);
 
   const handleDelete = async () => {
-    const card = cards[currentIndex];
-    if (!card) return;
+    const item = items[currentIndex];
+    if (!item) return;
 
-    if (confirm(`Delete "${card.front}"?`)) {
+    if (confirm(`Delete "${item.front}"?`)) {
       try {
-        await deleteCard(card.id);
-        setCards(prev => prev.filter((_, i) => i !== currentIndex));
+        await deleteCard(item.card_id);
+        setItems(prev => prev.filter((_, i) => i !== currentIndex));
       } catch (err) {
         console.error('Failed to delete card:', err);
       }
     }
   };
 
-  const handleEdit = (card: Card) => {
-    setEditingCard(card);
-    setEditBack(card.back);
-    setEditHint(card.hint || '');
-    setEditTags(card.tags.map(t => `#${t}`).join(' '));
+  const handleEdit = (item: QueueItem) => {
+    setEditingItem(item);
+    setEditBack(item.card_back);
+    setEditHint(item.hint || '');
+    setEditTags(item.tags.map(t => `#${t}`).join(' '));
   };
 
   const handleSaveEdit = async () => {
-    if (!editingCard) return;
+    if (!editingItem) return;
     try {
       const parsedTags = [...new Set(
         (editTags.match(/#(\w+)/g) || []).map(t => t.slice(1).toLowerCase())
       )];
-      await updateCard(editingCard.id, { back: editBack, hint: editHint, tags: parsedTags });
-      setCards(prev =>
+      await updateCard(editingItem.card_id, { back: editBack, hint: editHint, tags: parsedTags });
+      setItems(prev =>
         prev.map(c =>
-          c.id === editingCard.id ? { ...c, back: editBack, hint: editHint, tags: parsedTags } : c
+          c.id === editingItem.id ? { ...c, hint: editHint, tags: parsedTags, card_back: editBack, back: c.is_reverse ? c.card_front : editBack } : c
         )
       );
-      setEditingCard(null);
+      setEditingItem(null);
     } catch (err) {
       console.error('Failed to update card:', err);
     }
@@ -175,7 +198,7 @@ export function LanguagePage({ mode }: Props) {
       setImportHint('');
       setImportTags('');
       setImportResult('Card added!');
-      await loadCards();
+      await loadItems();
     } catch (err: any) {
       setImportResult(err.response?.data?.detail || 'Failed to add card');
     }
@@ -187,7 +210,7 @@ export function LanguagePage({ mode }: Props) {
       const result = await importCards({ csv_content: csvText, language });
       setCsvResult(`Imported: ${result.imported} | Duplicates: ${result.duplicates}`);
       setCsvText('');
-      await loadCards();
+      await loadItems();
     } catch (err) {
       setCsvResult('Import failed');
     }
@@ -219,12 +242,12 @@ export function LanguagePage({ mode }: Props) {
           {showImport ? 'Hide Import' : mode === 'emergency' ? '+ Add Word' : 'Import'}
         </button>
 
-        <button onClick={loadCards} style={btn}>
+        <button onClick={loadItems} style={btn}>
           Refresh
         </button>
 
         <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-          {cards.length} cards
+          {items.length} items
         </span>
 
         {mode === 'emergency' && (
@@ -310,10 +333,11 @@ export function LanguagePage({ mode }: Props) {
         gap: '12px',
         flexWrap: 'wrap',
       }}>
-        <span>Card {currentIndex + 1} of {cards.length}</span>
+        <span>Item {currentIndex + 1} of {items.length}</span>
         {sessionStats.total > 0 && (
           <span>
             Session: {sessionStats.total} reviewed
+            {sessionStats.reverse > 0 && ` | Reverse: ${sessionStats.reverse}`}
             {sessionStats.again > 0 && ` | Again: ${sessionStats.again}`}
             {sessionStats.hard > 0 && ` Hard: ${sessionStats.hard}`}
             {sessionStats.good > 0 && ` Good: ${sessionStats.good}`}
@@ -325,10 +349,10 @@ export function LanguagePage({ mode }: Props) {
       {/* Card display */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>Loading...</div>
-      ) : cards.length > 0 ? (
+      ) : items.length > 0 ? (
         <CardDisplay
-          key={cards[currentIndex]?.id}
-          card={cards[currentIndex]}
+          key={items[currentIndex]?.id + '-' + (items[currentIndex]?.is_reverse ? 'rev' : 'norm')}
+          item={items[currentIndex]}
           onGrade={handleGrade}
           onDelete={handleDelete}
           onEdit={handleEdit}
@@ -345,7 +369,7 @@ export function LanguagePage({ mode }: Props) {
       )}
 
       {/* Edit modal */}
-      {editingCard && (
+      {editingItem && (
         <div style={overlay}>
           <div style={modal}>
             <h3 style={{ marginBottom: '12px', color: 'var(--text-primary)' }}>Edit Card</h3>
@@ -358,7 +382,8 @@ export function LanguagePage({ mode }: Props) {
                 fontSize: '1.05rem',
                 color: 'var(--text-primary)',
               }}>
-                {editingCard.front}
+                {editingItem.card_front}
+                {editingItem.is_reverse && <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginLeft: '8px' }}>(reverse)</span>}
               </div>
             </div>
             <div style={{ marginBottom: '10px' }}>
@@ -381,7 +406,7 @@ export function LanguagePage({ mode }: Props) {
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button onClick={handleSaveEdit} style={btnPrimary}>Save</button>
-              <button onClick={() => setEditingCard(null)} style={{ ...btnPrimary, background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>Cancel</button>
+              <button onClick={() => setEditingItem(null)} style={{ ...btnPrimary, background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>Cancel</button>
             </div>
           </div>
         </div>

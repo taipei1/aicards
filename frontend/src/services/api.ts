@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Card, ReviewCreate, ReviewResponse, CSVImportRequest, CSVImportResponse } from '../types';
+import type { Card, ReviewCreate, ReviewResponse, CSVImportRequest, CSVImportResponse, QueueItem } from '../types';
 
 const API_URL = '/api';
 
@@ -12,7 +12,7 @@ const api = axios.create({
 
 // ============ CARDS API ============
 
-export async function getCardsDue(language: string, tag?: string, limit: number = 20): Promise<Card[]> {
+export async function getCardsDue(language: string, tag?: string, limit: number = 20): Promise<QueueItem[]> {
   const params: Record<string, any> = { language, limit };
   if (tag) params.tag = tag;
   const res = await api.get('/cards/due', { params });
@@ -81,6 +81,11 @@ export async function importCards(data: CSVImportRequest): Promise<CSVImportResp
 
 export async function logReview(review: ReviewCreate): Promise<ReviewResponse> {
   const res = await api.post('/reviews/', review);
+  return res.data;
+}
+
+export async function logReverseReview(review: ReviewCreate): Promise<ReviewResponse> {
+  const res = await api.post('/reviews/reverse', review);
   return res.data;
 }
 

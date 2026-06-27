@@ -12,6 +12,23 @@ export interface Card {
   review_count?: number;
 }
 
+export interface QueueItem {
+  id: number;
+  front: string;
+  back: string;
+  hint?: string;
+  tags: string[];
+  language: string;
+  stability: number;
+  difficulty: number;
+  last_reviewed?: string;
+  review_count: number;
+  is_reverse: boolean;
+  card_id: number;
+  card_front: string;
+  card_back: string;
+}
+
 export interface Review {
   id: number;
   rating: number;

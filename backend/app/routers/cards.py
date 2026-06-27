@@ -1,12 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, text
 from datetime import datetime, timezone
 from typing import List, Optional
 
 from app.database import get_db
-from app.models import Card, Review, User
-from app.schemas import CardCreate, CardUpdate, CardResponse, CSVImportRequest, CSVImportResponse, CSVConflict
+from app.models import Card, CardReverse, Review, User
+from app.schemas import (
+    CardCreate, CardUpdate, CardResponse,
+    CSVImportRequest, CSVImportResponse, CSVConflict,
+    QueueItem
+)
 from app.services.fsrs_service import fsrs_service
 from app.utils.csv_parser import CSVParser
 
@@ -21,6 +25,44 @@ def get_current_user(db: Session = Depends(get_db)) -> User:
         db.commit()
         db.refresh(user)
     return user
+
+
+def _card_to_queue_item(card: Card, review_count: int) -> QueueItem:
+    return QueueItem(
+        id=card.id,
+        front=card.front,
+        back=card.back,
+        hint=card.hint,
+        tags=card.tags or [],
+        language=card.language,
+        stability=card.stability,
+        difficulty=card.difficulty,
+        last_reviewed=card.last_reviewed,
+        review_count=review_count,
+        is_reverse=False,
+        card_id=card.id,
+        card_front=card.front,
+        card_back=card.back,
+    )
+
+
+def _reverse_to_queue_item(card: Card, rev: CardReverse, review_count: int) -> QueueItem:
+    return QueueItem(
+        id=rev.id,  # Use reverse ID as unique queue identifier
+        front=card.back,   # Question: native language
+        back=card.front,   # Answer: target language
+        hint=card.hint,
+        tags=card.tags or [],
+        language=card.language,
+        stability=rev.stability,
+        difficulty=rev.difficulty,
+        last_reviewed=rev.last_reviewed,
+        review_count=review_count,
+        is_reverse=True,
+        card_id=card.id,
+        card_front=card.front,
+        card_back=card.back,
+    )
 
 
 @router.post("/import", response_model=CSVImportResponse)
@@ -97,6 +139,16 @@ def import_cards(
                 created_at=published_at or datetime.now(timezone.utc)
             )
             db.add(card)
+            db.flush()  # Get card.id
+            
+            # Auto-create reverse card with same FSRS params
+            rev = CardReverse(
+                card_id=card.id,
+                stability=stability,
+                difficulty=difficulty,
+            )
+            db.add(rev)
+            
             imported += 1
             
             # Commit every 100 cards to avoid massive transaction
@@ -125,7 +177,7 @@ def import_cards(
     )
 
 
-@router.get("/due", response_model=List[CardResponse])
+@router.get("/due", response_model=List[QueueItem])
 def get_due_cards(
     language: str = "en",
     tag: Optional[str] = Query(None, description="Filter by tag"),
@@ -133,39 +185,51 @@ def get_due_cards(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """Get cards due for review (FSRS scheduling). Optionally filter by tag."""
-    query = db.query(Card).filter(
+    """Get cards due for review (FSRS scheduling).
+    Returns both normal AND reverse cards in one queue.
+    Reverse cards show card.back as question and card.front as answer."""
+    
+    # 1) Get normal due cards — take half the limit
+    half = limit // 2
+    card_query = db.query(Card).filter(
         Card.user_id == user.id,
         Card.language == language
     )
-    
     if tag:
-        query = query.filter(Card.tags.any(tag))
+        card_query = card_query.filter(Card.tags.any(tag))
+    cards = card_query.order_by(Card.stability.asc()).limit(half).all()
     
-    cards = query.order_by(Card.stability.asc()).limit(limit).all()
+    # 2) Get reverse due cards (join with cards to get language/tags)
+    rev_query = db.query(CardReverse, Card).join(
+        Card, CardReverse.card_id == Card.id
+    ).filter(
+        Card.user_id == user.id,
+        Card.language == language
+    )
+    if tag:
+        rev_query = rev_query.filter(Card.tags.any(tag))
     
-    # Attach review counts
-    result = []
+    rev_results = rev_query.order_by(CardReverse.stability.asc()).limit(limit - half).all()
+    
+    # 3) Merge into single queue, interleaved by stability
+    queue_items = []
+    
     for card in cards:
         review_count = db.query(func.count(Review.id)).filter(
             Review.card_id == card.id
         ).scalar() or 0
-        card_dict = {
-            "id": card.id,
-            "front": card.front,
-            "back": card.back,
-            "hint": card.hint,
-            "tags": card.tags or [],
-            "language": card.language,
-            "stability": card.stability,
-            "difficulty": card.difficulty,
-            "last_reviewed": card.last_reviewed,
-            "created_at": card.created_at,
-            "review_count": review_count
-        }
-        result.append(card_dict)
+        queue_items.append(_card_to_queue_item(card, review_count))
     
-    return result
+    for rev, card in rev_results:
+        review_count = db.query(func.count(Review.id)).filter(
+            Review.card_id == card.id
+        ).scalar() or 0
+        queue_items.append(_reverse_to_queue_item(card, rev, review_count))
+    
+    # Sort by stability (lowest first = most urgent) to interleave normal+reverse
+    queue_items.sort(key=lambda x: x.stability)
+    
+    return queue_items[:limit]
 
 
 @router.get("/tags", response_model=List[str])
@@ -297,7 +361,7 @@ def create_card(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """Add single card."""
+    """Add single card + auto-create reverse."""
     # Check for duplicates
     existing = db.query(Card).filter(
         Card.user_id == user.id,
@@ -322,6 +386,16 @@ def create_card(
         difficulty=5.0
     )
     db.add(card)
+    db.flush()  # Get card.id
+    
+    # Auto-create reverse card
+    rev = CardReverse(
+        card_id=card.id,
+        stability=1.0,
+        difficulty=5.0,
+    )
+    db.add(rev)
+    
     db.commit()
     db.refresh(card)
     
@@ -360,7 +434,7 @@ def delete_card(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """Delete card permanently."""
+    """Delete card permanently (reverse deleted via CASCADE)."""
     card = db.query(Card).filter(
         Card.id == card_id,
         Card.user_id == user.id
