@@ -86,13 +86,10 @@ def get_progress(
     user: User = Depends(get_current_user)
 ):
     """Get learning progress."""
-    from app.models import Card, CardReverse, ObsidianNote
+    from app.models import Card, ObsidianNote
     
     if module == "language":
-        total_cards = db.query(Card).filter(Card.user_id == user.id).count()
-        total_reverses = db.query(CardReverse).join(Card, CardReverse.card_id == Card.id).filter(
-            Card.user_id == user.id
-        ).count()
+        total = db.query(Card).filter(Card.user_id == user.id).count()
         by_lang = {}
         for lang in ["en", "sk"]:
             count = db.query(Card).filter(
@@ -103,9 +100,7 @@ def get_progress(
         
         return {
             "module": module,
-            "total_cards": total_cards,
-            "total_reverses": total_reverses,
-            "total_items": total_cards + total_reverses,
+            "total_cards": total,
             "by_language": by_lang
         }
     else:
