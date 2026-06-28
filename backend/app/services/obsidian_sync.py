@@ -19,6 +19,7 @@ class ObsidianSyncService:
         
         # Extract YAML frontmatter
         frontmatter = {}
+        tags = []
         if content.startswith('---'):
             parts = content.split('---', 2)
             if len(parts) >= 3:
@@ -29,11 +30,20 @@ class ObsidianSyncService:
                             key, value = line.split(':', 1)
                             frontmatter[key.strip()] = value.strip().strip('"').strip("'")
                     content = parts[2]
+                    # Extract tags from frontmatter
+                    if 'tags' in frontmatter:
+                        fm_tags = frontmatter['tags']
+                        # Handle "tags: srs" (single) and "tags: [srs, eng]" (list)
+                        if fm_tags.startswith('[') and fm_tags.endswith(']'):
+                            tags = [t.strip().strip('"').strip("'") for t in fm_tags[1:-1].split(',') if t.strip()]
+                        else:
+                            tags = [fm_tags]
                 except Exception:
                     pass
         
-        # Extract hashtags as tags
-        tags = re.findall(r'#(\w+)', content)
+        # Extract inline hashtags as tags
+        inline_tags = re.findall(r'#(\w+)', content)
+        tags = list(set(tags + inline_tags))
         
         # Get file timestamps
         stat = os.stat(file_path)
