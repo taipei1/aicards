@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 
 from app.database import get_db
-from app.models import Card, CardReverse, User
+from app.models import Card, User
 from app.services.groq_service import groq_service
 
 router = APIRouter()
@@ -38,10 +38,10 @@ def generate_sentence(
 ):
     language = request.language
 
+    # Get the least stable cards for sentence generation
     cards = (
         db.query(Card)
-        .outerjoin(CardReverse, CardReverse.card_id == Card.id)
-        .filter(Card.user_id == user.id, Card.language == language, CardReverse.id.is_(None))
+        .filter(Card.user_id == user.id, Card.language == language)
         .order_by(Card.stability.asc())
         .limit(20)
         .all()

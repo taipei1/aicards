@@ -19,6 +19,9 @@ services:
       OBSIDIAN_FOLDER_PATH: /app/obsidian-test
       SRS_TAG: ${SRS_TAG:-srs}
       CORS_ORIGINS: '["https://translatepls.me"]'
+      COUCHDB_USERNAME: ${COUCHDB_USERNAME:-admin}
+      COUCHDB_PASSWORD: ${COUCHDB_PASSWORD}
+      COUCHDB_DB_NAME: obsidian-sync
     ports:
       - "8000:8000"
     volumes:

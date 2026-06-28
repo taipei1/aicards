@@ -1,0 +1,43 @@
+Do TWO things:
+
+=== PART 1: Fix backend filtering in groq.py ===
+backend/app/routers/groq.py line 41-48: The current code uses:
+  .join(CardReverse, CardReverse.card_id == Card.id)
+This is WRONG. It means only cards that HAVE a reverse entry are returned (the opposite of what's needed).
+
+Fix it to use:
+  .outerjoin(CardReverse, CardReverse.card_id == Card.id).filter(CardReverse.id.is_(None))
+This excludes cards that have reverse entries, keeping only normal cards.
+
+=== PART 2: Implement Tasks 8, 9, 10 from the groq-sentences-obsidian plan ===
+Read .omo/plans/groq-sentences-obsidian.md for full spec.
+
+Task 8 — frontend/src/pages/ObsidianPage.tsx: Two-mode tabs (Due + All Notes)
+- Add tab switcher: "Due" (default) | "All Notes"
+- Due tab: keep ALL existing behavior unchanged (auto-load, questions, grading, etc.)
+- All Notes tab: new mode
+  - Loads all notes via getObsidianNotes()
+  - Shows just filenames (no preview, no content) — minimal clean list
+  - Each filename is clickable
+  - Tag filter works here too
+- Do NOT remove any existing functions: handleSync, loadNotes, handleGenerateQuestions, handleGrade, etc.
+
+Task 9 — ObsidianPage: Manual note selection + content display
+- Click on filename in All Notes tab -> load full note content via getObsidianNote(noteId)
+- Show: title (bold, large), tags (small), full content (white-space pre-wrap)
+- Auto TTS via speak(note.content, 'ru') after 300ms
+- "Back to list" button
+- Escape key -> back to list
+- NO grade buttons yet (they come in Task 10)
+
+Task 10 — ObsidianPage: Review grading for manual selection
+- When note content is shown, display grade buttons (1-4): Again, Hard, Good, Easy
+- On grade: call logObsidianReview(noteId, rating, timeSeconds)
+- After grading: return to note list
+- Show "SRS ON" green badge + "Review logged" message
+
+Files to touch: backend/app/routers/groq.py, frontend/src/pages/ObsidianPage.tsx
+Files NOT to touch: backend/** except groq.py, frontend/src/pages/LanguagePage.tsx, frontend/src/pages/CardDisplay.tsx (if exists), frontend/src/services/api.ts
+
+After all changes: cd frontend && npx tsc --noEmit 2>&1
+Do NOT break any existing functionality in ObsidianPage.tsx.

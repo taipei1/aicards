@@ -1,0 +1,35 @@
+Implement Tasks 5, 6, 7 from the groq-sentences-obsidian plan (Wave 2 — Frontend Sentences).
+
+Read .omo/plans/groq-sentences-obsidian.md for full spec.
+
+Task 5 — frontend/src/services/api.ts: Add generateSentence function
+- Add: export async function generateSentence(language: string): Promise<{sentence_in_target: string, translation_in_russian: string}>
+- Calls POST /api/groq/sentence with body {language}
+- Follow existing POST patterns in api.ts (like translateWord)
+- Do NOT modify any existing functions
+
+Task 6 — frontend/src/pages/SentencePage.tsx: Create new page
+- Create frontend/src/pages/SentencePage.tsx
+- Layout: Title "Sentences", language selector (English/Slovak), Generate Sentence button, card display
+- Card: uses cardBox from theme.ts, random direction (50/50 which side is shown), flip on click/Space
+- TTS: speak() and speakSlow() from utils/tts.ts. Always plays sentence_in_target.
+- Language mapping: en->'en-US', sk->'sk'
+- Buttons: Replay (R), Slow (S), Next (N) keyboard shortcuts
+- If no due cards (404): show message "No vocabulary due for review. Add some words first!" with link to Add Word page
+- Do NOT import CardDisplay or any card review system components
+- Do NOT add FSRS or grade buttons
+- Import { speak, speakSlow } from '../utils/tts' — this import exists in the project
+- Import { generateSentence } from '../services/api'
+
+Task 7 — frontend/src/App.tsx: Add Sentences nav item
+- Import SentencePage from ./pages/SentencePage
+- Add 'sentences' to Page type union: type Page = 'language' | 'obsidian' | 'stats' | 'words' | 'emergency' | 'add-word' | 'sentences'
+- Add nav item { key: 'sentences', label: 'Sentences' } between 'add-word' and 'words'
+- Add { currentPage === 'sentences' && <SentencePage /> } to page rendering
+- Do NOT reorder existing nav items
+- Do NOT modify LanguagePage.tsx or CardDisplay.tsx
+
+After all changes: cd frontend && npx tsc --noEmit 2>&1 | head -20
+
+Files to touch: frontend/src/services/api.ts, frontend/src/pages/SentencePage.tsx (create), frontend/src/App.tsx
+Files NOT to touch: backend/**, frontend/src/pages/LanguagePage.tsx, frontend/src/pages/CardDisplay.tsx (if exists)

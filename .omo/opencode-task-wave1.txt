@@ -1,0 +1,19 @@
+Прочитай файл .omo/plans/groq-sentences-obsidian.md — это план разработки.
+
+Твоя задача: выполнить Tasks 1-4 (Wave 1 — Backend) из этого плана.
+
+Что нужно сделать:
+1. backend/app/config.py: Добавь groq_api_key: str и groq_model: str = "llama-3.3-70b-versatile" в класс Settings
+2. backend/requirements.txt: Добавь groq>=1.0.0
+3. backend/app/services/groq_service.py: Создай GroqService (синглтон как GeminiService) с методом generate_sentence(word, language, front_meaning, back_meaning) -> возвращает JSON с sentence_in_target и translation_in_russian
+4. backend/app/routers/groq.py: Создай POST /api/groq/sentence endpoint — выбирает случайное due-слово, вызывает Groq, возвращает предложение
+5. backend/app/main.py: Подключи groq router
+6. Установи pip install groq после добавления в requirements.txt
+
+Файлы которые МОЖНО трогать: backend/app/config.py, backend/requirements.txt, backend/app/services/groq_service.py (создать), backend/app/routers/groq.py (создать), backend/app/main.py
+Файлы которые НЕЛЬЗЯ трогать: backend/app/services/gemini_service.py, backend/app/routers/cards.py, backend/app/routers/obsidian.py, frontend/ файлы
+
+GROQ_API_KEY уже добавлен в .env.
+Модель: llama-3.3-70b-versatile (не mixtral).
+
+После каждого изменения проверь что код импортируется без ошибок.

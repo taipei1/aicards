@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     groq_api_key: str
     groq_model: str = "llama-3.3-70b-versatile"
     
+    # CouchDB (Self-hosted LiveSync)
+    couchdb_username: str = "admin"
+    couchdb_password: str = ""
+    
     # FSRS defaults
     fsrs_default_stability: float = 1.0
     fsrs_default_difficulty: float = 5.0

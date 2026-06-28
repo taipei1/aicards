@@ -8,6 +8,8 @@ from app.models import ObsidianNote, NoteEmbedding, ObsidianReview, User, Sessio
 from app.schemas import ReviewResponse
 from app.services.obsidian_sync import ObsidianSyncService
 from app.services.gemini_service import gemini_service
+from app.services.groq_service import groq_service
+from app.services.couchdb_sync import CouchDBSyncService
 from app.services.fsrs_service import fsrs_service
 from app.config import settings
 
@@ -29,10 +31,26 @@ def sync_obsidian(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """Synchronize Obsidian folder with database."""
+    """Synchronize Obsidian notes from CouchDB (Self-hosted LiveSync) with database."""
+    # Step 1: Pull notes from CouchDB into local folder
+    try:
+        couchdb = CouchDBSyncService(
+            couchdb_url="http://couchdb:5984",
+            username=settings.couchdb_username,
+            password=settings.couchdb_password,
+            db_name="obsidian-sync"
+        )
+        from pathlib import Path
+        written = couchdb.fetch_vault_as_files(Path(settings.obsidian_folder_path))
+        print(f"[CouchDBSync] Fetched {written} files to {settings.obsidian_folder_path}")
+    except Exception as e:
+        print(f"[CouchDBSync] Error: {e}")
+        return {"synced": 0, "updated": 0, "total": 0, "error": str(e)}
+
+    # Step 2: Scan local folder and sync to DB
     sync_service = ObsidianSyncService(settings.obsidian_folder_path)
     notes = sync_service.scan_folder()
-    
+
     synced = 0
     updated = 0
     
@@ -175,11 +193,20 @@ def generate_questions(
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
     
-    questions = gemini_service.generate_questions(
+    # Try Groq first, fallback to Gemini
+    questions = groq_service.generate_questions(
         note.content,
         num_questions=num_questions,
         advanced=advanced
     )
+    
+    # If Groq fails, try Gemini
+    if not questions or questions[0].get("question", "").startswith("Groq not available"):
+        questions = gemini_service.generate_questions(
+            note.content,
+            num_questions=num_questions,
+            advanced=advanced
+        )
     
     return {"questions": questions, "note_id": note_id}
 

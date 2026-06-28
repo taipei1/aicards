@@ -1,0 +1,14 @@
+{
+  "schema_version": 2,
+  "active_work_id": null,
+  "works": {
+    "single-add-mode": {
+      "work_id": "single-add-mode",
+      "active_plan": ".omo/plans/single-add-mode.md",
+      "plan_name": "single-add-mode",
+      "session_ids": [],
+      "status": "completed",
+      "worktree_path": null
+    }
+  }
+}

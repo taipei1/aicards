@@ -1,0 +1,13 @@
+Implement Tasks 1-4 (Wave 1 Backend) from the groq-sentences-obsidian plan.
+
+The plan is at .omo/plans/groq-sentences-obsidian.md
+
+What to do:
+1. backend/app/config.py: add groq_api_key: str and groq_model: str = "llama-3.3-70b-versatile" to Settings class
+2. backend/requirements.txt: add groq>=1.0.0
+3. Create backend/app/services/groq_service.py with GroqService singleton (like gemini_service.py pattern)
+4. Create backend/app/routers/groq.py with POST /api/groq/sentence endpoint
+5. backend/app/main.py: wire groq router
+
+IMPORTANT: Do NOT try to read .env file. GROQ_API_KEY is already in .env. Just implement the code.
+After all changes: pip install groq && python -c "from app.main import app; print('OK')"
