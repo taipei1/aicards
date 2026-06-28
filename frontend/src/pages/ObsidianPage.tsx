@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { syncObsidian, getDueNotes, getObsidianNote, generateQuestions, logObsidianReview } from '../services/api';
+import { syncObsidian, getDueNotes, getObsidianNotes, getObsidianNote, generateQuestions, logObsidianReview } from '../services/api';
 import { speak } from '../utils/tts';
 import { btn, btnGrade, tagStyle } from '../styles/theme';
 
@@ -26,6 +26,19 @@ export function ObsidianPage() {
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+
+  // --- Tab state ---
+  const [activeTab, setActiveTab] = useState<'due' | 'all-notes'>('due');
+
+  // --- All Notes state ---
+  const [allNotes, setAllNotes] = useState<Note[]>([]);
+  const [allNotesLoading, setAllNotesLoading] = useState(false);
+  const [allNotesTag, setAllNotesTag] = useState('');
+
+  // --- Manual selection state ---
+  const [selectedNoteContent, setSelectedNoteContent] = useState<any>(null);
+  const [selectedNoteLoading, setSelectedNoteLoading] = useState(false);
+  const [gradeMessage, setGradeMessage] = useState('');
 
   const loadNotes = async () => {
     setLoading(true);
@@ -102,6 +115,62 @@ export function ObsidianPage() {
     await handleGenerateQuestions(currentNote.id, true);
   };
 
+  // --- All Notes functions ---
+
+  const loadAllNotes = async (tag?: string) => {
+    setAllNotesLoading(true);
+    try {
+      const result = await getObsidianNotes(tag || undefined, 100);
+      setAllNotes(result || []);
+    } catch (err) {
+      console.error('Failed to load all notes:', err);
+    }
+    setAllNotesLoading(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'all-notes') {
+      loadAllNotes(allNotesTag || undefined);
+    }
+  }, [activeTab]);
+
+  const handleNoteClick = async (note: Note) => {
+    setSelectedNoteLoading(true);
+    setGradeMessage('');
+    try {
+      const content = await getObsidianNote(note.id);
+      setSelectedNoteContent(content);
+      setTimeout(() => speak(content.content, 'ru'), 300);
+    } catch (err) {
+      console.error('Failed to load note content:', err);
+    }
+    setSelectedNoteLoading(false);
+  };
+
+  const handleBackToList = () => {
+    setSelectedNoteContent(null);
+    setGradeMessage('');
+  };
+
+  const handleManualGrade = async (rating: 1 | 2 | 3 | 4) => {
+    if (!selectedNoteContent) return;
+    try {
+      await logObsidianReview(selectedNoteContent.id, rating, 30);
+      setGradeMessage('Review logged');
+      setTimeout(() => {
+        setSelectedNoteContent(null);
+        setGradeMessage('');
+      }, 1500);
+    } catch (err) {
+      console.error('Failed to log manual review:', err);
+    }
+  };
+
+  const handleAllNotesTagFilter = (tag: string) => {
+    setAllNotesTag(tag);
+    loadAllNotes(tag || undefined);
+  };
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.code === 'Space') {
@@ -122,8 +191,11 @@ export function ObsidianPage() {
       if (e.code === 'KeyR' && currentQuestion !== null && questions[currentQuestion]) {
         speak(questions[currentQuestion].question);
       }
+      if (e.code === 'Escape' && activeTab === 'all-notes' && selectedNoteContent) {
+        handleBackToList();
+      }
     },
-    [isRevealed, currentNote, currentQuestion, questions]
+    [isRevealed, currentNote, currentQuestion, questions, activeTab, selectedNoteContent]
   );
 
   useEffect(() => {
@@ -135,6 +207,39 @@ export function ObsidianPage() {
     <div>
       <h2 style={{ marginBottom: '20px', color: 'var(--text-primary)' }}>Obsidian Knowledge Base</h2>
 
+      {/* Tab switcher */}
+      <div style={{ marginBottom: '20px', display: 'flex', gap: '0', borderBottom: '2px solid var(--border-primary)' }}>
+        <button
+          onClick={() => setActiveTab('due')}
+          style={{
+            padding: '10px 24px',
+            fontSize: '1rem',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            border: 'none',
+            borderBottom: activeTab === 'due' ? '3px solid var(--accent)' : '3px solid transparent',
+            background: 'transparent',
+            color: activeTab === 'due' ? 'var(--accent)' : 'var(--text-secondary)',
+          }}
+        >Due</button>
+        <button
+          onClick={() => setActiveTab('all-notes')}
+          style={{
+            padding: '10px 24px',
+            fontSize: '1rem',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            border: 'none',
+            borderBottom: activeTab === 'all-notes' ? '3px solid var(--accent)' : '3px solid transparent',
+            background: 'transparent',
+            color: activeTab === 'all-notes' ? 'var(--accent)' : 'var(--text-secondary)',
+          }}
+        >All Notes</button>
+      </div>
+
+      {/* ========== DUE TAB ========== */}
+      {activeTab === 'due' && (
+        <>
       <div style={{ marginBottom: '20px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
         <button onClick={handleSync} disabled={syncing} style={btn}>
           {syncing ? 'Syncing...' : 'Sync Obsidian'}
@@ -250,6 +355,142 @@ export function ObsidianPage() {
       <div style={{ marginTop: '24px', color: 'var(--text-secondary)', fontSize: '0.85rem', textAlign: 'center' }}>
         <p>Space: reveal | 1-4: grade | D: reject | E: ask another | S: advanced | R: replay</p>
       </div>
+        </>
+      )}
+
+      {/* ========== ALL NOTES TAB ========== */}
+      {activeTab === 'all-notes' && (
+        <>
+          {selectedNoteContent ? (
+            /* ----- Note content view ----- */
+            <div style={{ maxWidth: '700px', margin: '0 auto' }}>
+              <div style={{ marginBottom: '16px' }}>
+                <button onClick={handleBackToList} style={btn}>← Back to list</button>
+              </div>
+
+              {gradeMessage && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                  marginBottom: '16px', padding: '8px 12px',
+                  background: 'var(--bg-success)', color: 'var(--text-success)',
+                  border: '1px solid var(--bg-success)', borderRadius: '4px',
+                  fontSize: '0.9rem',
+                }}>
+                  <span style={{ fontWeight: 'bold', color: 'var(--text-success)' }}>SRS ON</span>
+                  <span>{gradeMessage}</span>
+                </div>
+              )}
+
+              <div style={{ fontSize: '1.4rem', fontWeight: 'bold', marginBottom: '8px', color: 'var(--text-primary)' }}>
+                {selectedNoteContent.file_path?.split(/[/\\]/).pop() || 'Note'}
+              </div>
+              {selectedNoteContent.tags && selectedNoteContent.tags.length > 0 && (
+                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                  {selectedNoteContent.tags.map((tag: string, i: number) => (
+                    <span key={i} style={tagStyle}>{tag}</span>
+                  ))}
+                </div>
+              )}
+
+              <div style={{
+                border: '2px solid var(--border-primary)',
+                padding: '24px',
+                marginBottom: '20px',
+                background: 'var(--bg-primary)',
+                color: 'var(--text-primary)',
+                whiteSpace: 'pre-wrap',
+                lineHeight: '1.6',
+                fontSize: '1rem',
+              }}>
+                {selectedNoteContent.content}
+              </div>
+
+              {/* Grade buttons for manual review */}
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{ marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                  Rate your recall:
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
+                  {([1, 2, 3, 4] as const).map(r => (
+                    <button key={r} onClick={() => handleManualGrade(r)} style={btnGrade}>
+                      {r}: {['','Again','Hard','Good','Easy'][r]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ marginTop: '16px', color: 'var(--text-secondary)', fontSize: '0.85rem', textAlign: 'center' }}>
+                <p>1-4: grade | Esc: back to list</p>
+              </div>
+            </div>
+          ) : (
+            /* ----- Note list view ----- */
+            <div>
+              {/* Tag filter */}
+              <div style={{ marginBottom: '16px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  placeholder="Filter by tag..."
+                  value={allNotesTag}
+                  onChange={(e) => handleAllNotesTagFilter(e.target.value)}
+                  style={{
+                    padding: '8px 12px',
+                    fontSize: '0.9rem',
+                    border: '2px solid var(--border-primary)',
+                    borderRadius: '4px',
+                    background: 'var(--input-bg)',
+                    color: 'var(--text-primary)',
+                    flex: 1,
+                    maxWidth: '300px',
+                  }}
+                />
+                {allNotesTag && (
+                  <button onClick={() => handleAllNotesTagFilter('')} style={btn}>Clear</button>
+                )}
+                <button onClick={() => loadAllNotes(allNotesTag || undefined)} style={btn}>Refresh</button>
+              </div>
+
+              {allNotesLoading ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>Loading...</div>
+              ) : allNotes.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {allNotes.map(note => (
+                    <button
+                      key={note.id}
+                      onClick={() => handleNoteClick(note)}
+                      style={{
+                        ...btn,
+                        textAlign: 'left',
+                        justifyContent: 'flex-start',
+                        padding: '10px 16px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        width: '100%',
+                        maxWidth: '600px',
+                      }}
+                    >
+                      <span>{note.file_path?.split(/[/\\]/).pop() || 'Untitled'}</span>
+                      {note.tags && note.tags.length > 0 && (
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginLeft: 'auto' }}>
+                          {note.tags.join(', ')}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                  <p>No notes found</p>
+                  <button onClick={handleSync} style={{ ...btn, marginTop: '16px' }}>
+                    Sync Obsidian Folder
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

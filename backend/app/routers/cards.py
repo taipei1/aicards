@@ -121,10 +121,8 @@ def import_cards(
             else:
                 stability, difficulty = 1.0, 5.0
             
-            # Tags from parsed data or fallback
+            # Tags from parsed data
             tags = card_data.get("tags", [])
-            if not tags:
-                tags = ["general"]
             
             # Create card
             card = Card(
@@ -380,7 +378,7 @@ def create_card(
         front=card_data.front,
         back=card_data.back,
         hint=card_data.hint,
-        tags=card_data.tags if card_data.tags else ["general"],
+        tags=card_data.tags or [],
         language=card_data.language,
         stability=1.0,
         difficulty=5.0

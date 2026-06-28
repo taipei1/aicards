@@ -15,8 +15,10 @@ pydantic-settings==2.1.0
 
 # LLM & Embeddings
 google-generativeai==0.3.0
+groq>=1.0.0
 
 gtts==2.5.3
+deep-translator
 
 # FSRS Algorithm
 fsrs==6.3.1

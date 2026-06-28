@@ -238,12 +238,12 @@ export function LanguagePage({ mode }: Props) {
           {tags.map(t => <option key={t} value={t}>#{t}</option>)}
         </select>
 
-        <button onClick={() => setShowImport(!showImport)} style={btn}>
-          {showImport ? 'Hide Import' : mode === 'emergency' ? '+ Add Word' : 'Import'}
-        </button>
-
         <button onClick={loadItems} style={btn}>
           Refresh
+        </button>
+
+        <button onClick={() => setShowImport(!showImport)} style={btn}>
+          {showImport ? 'Hide Import' : mode === 'emergency' ? '+ Add Word' : 'Import'}
         </button>
 
         <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>

@@ -3,8 +3,10 @@ import { LanguagePage } from './pages/LanguagePage';
 import { ObsidianPage } from './pages/ObsidianPage';
 import { StatsPage } from './pages/StatsPage';
 import { WordListPage } from './pages/WordListPage';
+import { AddWordPage } from './pages/AddWordPage';
+import { SentencePage } from './pages/SentencePage';
 
-type Page = 'language' | 'obsidian' | 'stats' | 'words' | 'emergency';
+type Page = 'language' | 'obsidian' | 'stats' | 'words' | 'emergency' | 'add-word' | 'sentences';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('language');
@@ -27,8 +29,10 @@ export default function App() {
 
   const navItems: { key: Page; label: string }[] = [
     { key: 'language', label: 'Learning' },
-    { key: 'words', label: 'All Words' },
     { key: 'emergency', label: 'Emergency' },
+    { key: 'add-word', label: 'Add Word' },
+    { key: 'sentences', label: 'Sentences' },
+    { key: 'words', label: 'All Words' },
     { key: 'obsidian', label: 'Obsidian' },
     { key: 'stats', label: 'Stats' },
   ];
@@ -100,6 +104,8 @@ export default function App() {
       {/* Page content */}
       {currentPage === 'language' && <LanguagePage mode="normal" />}
       {currentPage === 'emergency' && <LanguagePage mode="emergency" />}
+      {currentPage === 'add-word' && <AddWordPage />}
+      {currentPage === 'sentences' && <SentencePage onNavigate={(p) => setCurrentPage(p as Page)} />}
       {currentPage === 'words' && <WordListPage />}
       {currentPage === 'obsidian' && <ObsidianPage />}
       {currentPage === 'stats' && <StatsPage />}

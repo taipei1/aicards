@@ -14,6 +14,8 @@ services:
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
       OBSIDIAN_FOLDER_PATH: /app/obsidian-test
       SRS_TAG: ${SRS_TAG:-srs}
       CORS_ORIGINS: '["https://translatepls.me"]'

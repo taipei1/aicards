@@ -77,6 +77,19 @@ export async function importCards(data: CSVImportRequest): Promise<CSVImportResp
   return res.data;
 }
 
+export async function translateWord(
+  word: string,
+  sourceLang: string,
+  targetLang: string
+): Promise<{ translated: string | null; source_lang: string; target_lang: string }> {
+  try {
+    const res = await api.post('/translate', { word, source_lang: sourceLang, target_lang: targetLang });
+    return res.data;
+  } catch {
+    return { translated: null, source_lang: sourceLang, target_lang: targetLang };
+  }
+}
+
 // ============ REVIEWS API ============
 
 export async function logReview(review: ReviewCreate): Promise<ReviewResponse> {
@@ -91,6 +104,13 @@ export async function logReverseReview(review: ReviewCreate): Promise<ReviewResp
 
 export async function getCardReviewHistory(cardId: number, limit: number = 10) {
   const res = await api.get(`/reviews/${cardId}/history`, { params: { limit } });
+  return res.data;
+}
+
+// ============ GROQ SENTENCE API ============
+
+export async function generateSentence(language: string): Promise<{sentence_in_target: string, translation_in_russian: string}> {
+  const res = await api.post('/groq/sentence', { language });
   return res.data;
 }
 

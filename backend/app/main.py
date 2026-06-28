@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.database import engine, Base
-from app.routers import cards, reviews, obsidian, stats, tts
+from app.routers import cards, reviews, obsidian, stats, tts, translate, groq
 
 # Create tables on startup
 Base.metadata.create_all(bind=engine)
@@ -38,6 +38,8 @@ app.include_router(reviews.router, prefix="/api/reviews", tags=["reviews"])
 app.include_router(obsidian.router, prefix="/api/obsidian", tags=["obsidian"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.include_router(tts.router, prefix="", tags=["tts"])
+app.include_router(groq.router, prefix="/api/groq", tags=["groq"])
+app.include_router(translate.router, prefix="/api/translate", tags=["translate"])
 
 @app.get("/")
 def read_root():

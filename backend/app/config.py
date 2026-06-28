@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     # Obsidian
     obsidian_folder_path: str = "../obsidian-test"
     
+    # Groq
+    groq_api_key: str
+    groq_model: str = "llama-3.3-70b-versatile"
+    
     # FSRS defaults
     fsrs_default_stability: float = 1.0
     fsrs_default_difficulty: float = 5.0
