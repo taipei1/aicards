@@ -1,7 +1,8 @@
+import re
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 
 from app.database import get_db
 from app.models import ObsidianNote, NoteEmbedding, ObsidianReview, User, SessionStats
@@ -14,6 +15,24 @@ from app.services.fsrs_service import fsrs_service
 from app.config import settings
 
 router = APIRouter()
+
+def extract_note_title(content: str, file_path: str) -> str:
+    """Extract note title: first # heading, or from filename, or fallback."""
+    # Try first markdown heading (# or ##)
+    for line in content.strip().split('\n'):
+        line = line.strip()
+        if line.startswith('# ') or line.startswith('## '):
+            # Remove leading # s and strip
+            title = re.sub(r'^#+\s*', '', line)
+            if title:
+                return title
+    # Fallback: extract from filename h_xxxx_title.md
+    filename = file_path.split('/')[-1].replace('.md', '')
+    match = re.match(r'^h_[a-z0-9]+_(.+)$', filename)
+    if match:
+        return match[1]
+    return filename
+
 
 # Helper: Get or create default user (single-user mode)
 def get_current_user(db: Session = Depends(get_db)) -> User:
@@ -115,6 +134,7 @@ def get_notes(
         {
             "id": note.id,
             "file_path": note.file_path,
+            "title": extract_note_title(note.content, note.file_path),
             "tags": note.tags,
             "stability": note.stability,
             "difficulty": note.difficulty,
@@ -143,6 +163,7 @@ def get_note(
     return {
         "id": note.id,
         "file_path": note.file_path,
+        "title": extract_note_title(note.content, note.file_path),
         "content": note.content,
         "tags": note.tags,
         "stability": note.stability,
@@ -156,18 +177,24 @@ def get_note(
 @router.get("/due")
 def get_due_notes(
     limit: int = 5,
+    tag: Optional[str] = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """Get notes due for review."""
-    notes = db.query(ObsidianNote).filter(
+    """Get notes due for review. Optionally filter by tag."""
+    query = db.query(ObsidianNote).filter(
         ObsidianNote.user_id == user.id
-    ).order_by(ObsidianNote.stability.asc()).limit(limit).all()
+    )
+    if tag:
+        query = query.filter(ObsidianNote.tags.any(tag))
+    
+    notes = query.order_by(ObsidianNote.stability.asc()).limit(limit).all()
     
     return [
         {
             "id": note.id,
             "file_path": note.file_path,
+            "title": extract_note_title(note.content, note.file_path),
             "tags": note.tags,
             "stability": note.stability,
             "content_preview": note.content[:300] + "..." if len(note.content) > 300 else note.content

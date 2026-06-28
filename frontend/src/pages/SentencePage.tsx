@@ -34,7 +34,10 @@ export function SentencePage({ onNavigate }: SentencePageProps) {
       setSentence(result);
       const front = Math.random() < 0.5;
       setShowFront(front);
-      speak(result.sentence_in_target, LANG_MAP[language]);
+      // Only speak if target language is shown first
+      if (front) {
+        speak(result.sentence_in_target, LANG_MAP[language]);
+      }
     } catch (err: any) {
       if (err?.response?.status === 404) {
         setNoCards(true);
@@ -50,7 +53,14 @@ export function SentencePage({ onNavigate }: SentencePageProps) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === ' ' || e.key === 'Space') {
         e.preventDefault();
-        if (sentence) setFlipped((f) => !f);
+        if (sentence) {
+          const newFlipped = !flipped;
+          setFlipped(newFlipped);
+          // Speak if newly revealed side is the target language
+          if ((newFlipped && !showFront) || (!newFlipped && showFront)) {
+            speak(sentence.sentence_in_target, LANG_MAP[language]);
+          }
+        }
       } else if (e.key === 'n' || e.key === 'N') {
         if (!loading) handleGenerate();
       } else if (e.key === 'r' || e.key === 'R') {
@@ -165,7 +175,13 @@ export function SentencePage({ onNavigate }: SentencePageProps) {
             {directionLabel}
           </div>
 
-          <div style={cardBox} onClick={() => setFlipped((f) => !f)}>
+          <div style={cardBox} onClick={() => {
+              const newFlipped = !flipped;
+              setFlipped(newFlipped);
+              if ((newFlipped && !showFront) || (!newFlipped && showFront)) {
+                speak(sentence.sentence_in_target, LANG_MAP[language]);
+              }
+            }}>
             <span
               style={{
                 fontSize: '1.3rem',

@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { syncObsidian, getDueNotes, getObsidianNotes, getObsidianNote, generateQuestions, logObsidianReview } from '../services/api';
-import { speak } from '../utils/tts';
 import { btn, btnGrade, tagStyle } from '../styles/theme';
 
 interface Note {
@@ -43,7 +42,7 @@ export function ObsidianPage() {
   const loadNotes = async () => {
     setLoading(true);
     try {
-      const dueNotes = await getDueNotes(5);
+      const dueNotes = await getDueNotes(5, 'srs');
       setNotes(dueNotes);
       if (dueNotes.length > 0) setCurrentNote(dueNotes[0]);
     } catch (err) {
@@ -73,9 +72,6 @@ export function ObsidianPage() {
       setQuestions(result.questions);
       setCurrentQuestion(0);
       setIsRevealed(false);
-      if (result.questions && result.questions.length > 0) {
-        setTimeout(() => speak(result.questions[0].question), 300);
-      }
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Failed to generate questions');
     }
@@ -140,7 +136,6 @@ export function ObsidianPage() {
     try {
       const content = await getObsidianNote(note.id);
       setSelectedNoteContent(content);
-      setTimeout(() => speak(content.content, 'ru'), 300);
     } catch (err) {
       console.error('Failed to load note content:', err);
     }
@@ -175,11 +170,7 @@ export function ObsidianPage() {
     (e: KeyboardEvent) => {
       if (e.code === 'Space') {
         e.preventDefault();
-        const newRevealed = !isRevealed;
-        setIsRevealed(newRevealed);
-        if (newRevealed && currentQuestion !== null && questions[currentQuestion]) {
-          setTimeout(() => speak(questions[currentQuestion].answer), 300);
-        }
+        setIsRevealed((r) => !r);
       }
       if (e.code === 'Digit1') handleGrade(1);
       if (e.code === 'Digit2') handleGrade(2);
@@ -189,7 +180,7 @@ export function ObsidianPage() {
       if (e.code === 'KeyE') handleAskAnother();
       if (e.code === 'KeyS') handleStarQuestion();
       if (e.code === 'KeyR' && currentQuestion !== null && questions[currentQuestion]) {
-        speak(questions[currentQuestion].question);
+        // Replay not available (TTS removed for Obsidian)
       }
       if (e.code === 'Escape' && activeTab === 'all-notes' && selectedNoteContent) {
         handleBackToList();
@@ -258,7 +249,7 @@ export function ObsidianPage() {
         <div style={{ maxWidth: '700px', margin: '0 auto' }}>
           <div style={{ marginBottom: '16px' }}>
             <div style={{ fontSize: '1.2rem', fontWeight: 'bold', marginBottom: '8px', color: 'var(--text-primary)' }}>
-              {currentNote.file_path.split(/[/\\]/).pop()}
+              {currentNote.title || currentNote.file_path?.split(/[/\\]/).pop()}
             </div>
             {currentNote.tags && currentNote.tags.length > 0 && (
               <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
@@ -382,7 +373,7 @@ export function ObsidianPage() {
               )}
 
               <div style={{ fontSize: '1.4rem', fontWeight: 'bold', marginBottom: '8px', color: 'var(--text-primary)' }}>
-                {selectedNoteContent.file_path?.split(/[/\\]/).pop() || 'Note'}
+                {selectedNoteContent.title || selectedNoteContent.file_path?.split(/[/\\]/).pop() || 'Note'}
               </div>
               {selectedNoteContent.tags && selectedNoteContent.tags.length > 0 && (
                 <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '16px' }}>
@@ -470,7 +461,7 @@ export function ObsidianPage() {
                         maxWidth: '600px',
                       }}
                     >
-                      <span>{note.file_path?.split(/[/\\]/).pop() || 'Untitled'}</span>
+                      <span>{note.title || note.file_path?.split(/[/\\]/).pop() || 'Untitled'}</span>
                       {note.tags && note.tags.length > 0 && (
                         <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginLeft: 'auto' }}>
                           {note.tags.join(', ')}

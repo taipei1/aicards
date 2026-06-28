@@ -133,8 +133,10 @@ export async function getObsidianNote(noteId: number) {
   return res.data;
 }
 
-export async function getDueNotes(limit: number = 5) {
-  const res = await api.get('/obsidian/due', { params: { limit } });
+export async function getDueNotes(limit: number = 5, tag?: string) {
+  const params: Record<string, any> = { limit };
+  if (tag) params.tag = tag;
+  const res = await api.get('/obsidian/due', { params });
   return res.data;
 }
 
