@@ -5,6 +5,7 @@ import { btn, btnGrade, tagStyle } from '../styles/theme';
 interface Note {
   id: number;
   file_path: string;
+  title?: string;
   tags: string[];
   stability: number;
   content_preview: string;
