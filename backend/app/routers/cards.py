@@ -74,6 +74,11 @@ def import_cards(
     """Import cards from CSV content."""
     try:
         parsed_cards = CSVParser.parse_csv(request.csv_content)
+        # If standard parser returned very few cards (less than half of lines),
+        # try lenient parser for inconsistent quoting
+        lines_count = request.csv_content.strip().count('\n')
+        if len(parsed_cards) < lines_count * 0.5 and lines_count > 1:
+            parsed_cards = CSVParser.parse_csv_lenient(request.csv_content)
     except Exception as e:
         import traceback
         traceback.print_exc()

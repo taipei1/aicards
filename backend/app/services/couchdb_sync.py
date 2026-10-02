@@ -35,7 +35,7 @@ class CouchDBSyncService:
             return None
 
     def _is_binary_content(self, data: str) -> bool:
-        """Check if data is likely binary (base64-encoded image, etc.)"""
+        """Check if data is likely binary (base64-encoded image, encrypted chunk, etc.)"""
         if not data:
             return True
         # Check for base64-encoded image headers
@@ -50,6 +50,77 @@ class CouchDBSyncService:
         non_printable = sum(1 for c in stripped[:1000] if ord(c) < 32 and c not in "\n\r\t")
         if non_printable > 100:
             return True
+        # Check for base64-encoded encrypted content (LiveSync stores encrypted chunks)
+        # Base64: long continuous alphanumeric string with /, +, =
+        first_line = stripped.split("\n")[0].strip() if stripped else ""
+        if len(first_line) >= 40:
+            # Count base64 chars vs total
+            base64_chars = sum(1 for c in first_line if c.isalnum() or c in "/+=_")
+            # If > 90% are base64 chars on a long first line, it's likely base64
+            if len(first_line) >= 60 and base64_chars > len(first_line) * 0.9:
+                return True
+            # Very long continuous string with no spaces (like "QhsGqoZGc4Xme...")
+            if " " not in first_line.strip() and len(first_line) >= 40:
+                # Check if it's mostly letters and digits (base64-like)
+                alnum = sum(1 for c in first_line if c.isalnum() or c in "/+=_\-")
+                if alnum > len(first_line) * 0.85:
+                    return True
+        return False
+
+    def _is_fragment_chunk(self, data: str) -> bool:
+        """
+        Check if data is a fragment chunk from LiveSync (not a complete note).
+        LiveSync splits large files into chunks that start mid-sentence.
+        A complete note should start with a heading, YAML frontmatter, or
+        natural content beginning (bold title, bullet header, etc.).
+        """
+        if not data:
+            return True
+        stripped = data.strip()
+        first_line = stripped.split("\n")[0].strip() if stripped else ""
+        if not first_line:
+            return True
+
+        # === COMPLETE NOTE STARTS (not fragments) ===
+
+        # Any heading level (# to ######)
+        if first_line.startswith("#"):
+            return False
+        # YAML frontmatter
+        if first_line.startswith("---"):
+            return False
+        # Bold text as title (common in Obsidian)
+        if first_line.startswith("**") and len(first_line) > 4:
+            return False
+        # Bullet/numbered-list note that starts as a topic header
+        if first_line.startswith("- ") or first_line.startswith("* "):
+            if len(first_line) > 10:
+                return False
+        # Blockquote-style note
+        if first_line.startswith("> ") and len(first_line) > 10:
+            return False
+
+        # === FRAGMENT INDICATORS ===
+
+        # Lowercase continuation from mid-sentence (ASCII only — not Cyrillic!)
+        if first_line[0].isascii() and first_line[0].islower():
+            return True
+        # Very short content with no heading (fragment debris)
+        if len(stripped) < 40:
+            return True
+        # Line is only punctuation / brackets / connectors
+        if first_line in ("---", "___", "***", "...", "]", "}", "|"):
+            return True
+        # Ends with a comma/bracket/pipe — likely a fragment continuation
+        if first_line.endswith(",") or first_line.endswith("|") or first_line.endswith("]") or first_line.endswith("\\\\"):
+            return True
+        # Just a closing bracket or a single word
+        if first_line.startswith("]") or first_line.startswith(")"):
+            return True
+        # Likely a table fragment (starts with | but no markdown table structure)
+        if first_line.startswith("|") and not first_line.endswith("|"):
+            return True
+
         return False
 
     def fetch_vault_as_files(self, output_dir: Path) -> int:
@@ -86,25 +157,48 @@ class CouchDBSyncService:
             if self._is_binary_content(data):
                 continue
 
-            # Generate a safe filename from doc_id
-            safe_id = doc_id.replace(":", "_").replace("/", "_").replace(" ", "_")
-            if len(safe_id) > 60:
-                safe_id = safe_id[:60]
-            
-            # Try to find a meaningful filename from content first line
-            first_line = data.strip().split("\n")[0].strip()
-            title = first_line.lstrip("#").strip()
-            if title and len(title) < 80 and not self._is_binary_content(title):
-                # Clean title for filename
-                title = "".join(c for c in title if c.isalnum() or c in " -_()[]").strip()
-                if title:
-                    if len(title) > 80:
-                        title = title[:80]
-                    file_path = f"{safe_id[:20]}_{title}.md"
+            # Skip LiveSync fragment chunks (no heading, start mid-sentence)
+            if self._is_fragment_chunk(data):
+                continue
+
+            # Determine filename — use doc's 'path' field if present (vault structure)
+            path_field = doc.get("path")
+            if path_field:
+                # Use original vault path to preserve directory structure
+                file_path = str(path_field)
+                # Ensure .md extension
+                if not file_path.endswith(".md"):
+                    file_path += ".md"
+                # Sanitize: remove only truly unsafe chars, keep Cyrillic
+                parts = file_path.split("/")
+                safe_parts = []
+                for p in parts:
+                    safe = "".join(c for c in p if c.isprintable() and c not in '<>:"|?*\\')
+                    if safe:
+                        safe_parts.append(safe)
+                if not safe_parts:
+                    file_path = f"note_{doc_id[:30]}.md"
+                else:
+                    file_path = "/".join(safe_parts)
+            else:
+                # Fallback: generate from doc_id
+                safe_id = doc_id.replace(":", "_").replace("/", "_").replace(" ", "_")
+                if len(safe_id) > 60:
+                    safe_id = safe_id[:60]
+                
+                # Try to find a meaningful filename from content first line
+                first_line = data.strip().split("\n")[0].strip()
+                title = first_line.lstrip("#").strip()
+                if title and len(title) < 80 and not self._is_binary_content(title):
+                    title = "".join(c for c in title if c.isalnum() or c in " -_()[]").strip()
+                    if title:
+                        if len(title) > 80:
+                            title = title[:80]
+                        file_path = f"{safe_id[:20]}_{title}.md"
+                    else:
+                        file_path = f"{safe_id}.md"
                 else:
                     file_path = f"{safe_id}.md"
-            else:
-                file_path = f"{safe_id}.md"
 
             full_path = output_dir / file_path
 

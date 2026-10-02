@@ -16,6 +16,10 @@ export function AddWordPage() {
   const [bulkRows, setBulkRows] = useState([{ front: '', back: '', hint: '', tags: '' }]);
   const [bulkMessage, setBulkMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
+  // CSV paste mode
+  const [csvText, setCsvText] = useState('');
+  const [csvMessage, setCsvMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
   const autoFilledRef = useRef(false);
   const userEditedRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
@@ -148,6 +152,25 @@ export function AddWordPage() {
     }
   };
 
+  const handleCsvPasteImport = async () => {
+    if (!csvText.trim()) {
+      setCsvMessage({ text: 'Paste some CSV content first', type: 'error' });
+      return;
+    }
+    try {
+      const result = await importCards({ csv_content: csvText.trim(), language });
+      setCsvMessage({
+        text: `Imported: ${result.imported} | Duplicates: ${result.duplicates}${result.conflicts.length ? ` | Conflicts: ${result.conflicts.length}` : ''}`,
+        type: result.imported > 0 ? 'success' : 'error',
+      });
+      if (result.imported > 0) {
+        setCsvText('');
+      }
+    } catch (err: any) {
+      setCsvMessage({ text: err.response?.data?.detail || 'Import failed', type: 'error' });
+    }
+  };
+
   // Fade success message after 3s
   useEffect(() => {
     if (!message || message.type !== 'success') return;
@@ -238,8 +261,52 @@ export function AddWordPage() {
         </div>
       </div>
 
-      {/* Toggle for bulk table mode */}
+      {/* ───── CSV Paste mode ───── */}
       <div style={{ marginTop: '16px' }}>
+        <div style={{
+          border: '2px solid var(--border-primary)',
+          padding: '12px',
+          borderRadius: '4px',
+          background: 'var(--bg-primary)',
+        }}>
+          <h3 style={{ marginBottom: '6px', color: 'var(--text-primary)', fontSize: '1rem' }}>Import from CSV</h3>
+          <div style={{ marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+            Format: <code>word,translation,hint,#tag1 #tag2</code> — one per line
+          </div>
+          <textarea
+            value={csvText}
+            onChange={e => setCsvText(e.target.value)}
+            placeholder={"word,translation,hint,#tag1 #tag2\nexample,пример,this is an example,#vocabulary #english"}
+            style={{
+              width: '100%',
+              minHeight: '100px',
+              padding: '8px',
+              fontSize: '0.85rem',
+              border: '2px solid var(--border-primary)',
+              borderRadius: '4px',
+              background: 'var(--input-bg)',
+              color: 'var(--text-primary)',
+              fontFamily: 'monospace',
+              resize: 'vertical',
+              boxSizing: 'border-box',
+            }}
+          />
+          <div style={{ marginTop: '8px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button onClick={handleCsvPasteImport} style={btnPrimary}>Import CSV</button>
+            {csvMessage && (
+              <span style={{
+                color: csvMessage.type === 'success' ? 'var(--text-success)' : 'var(--text-danger)',
+                fontSize: '0.9rem',
+              }}>
+                {csvMessage.text}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Toggle for bulk table mode */}
+      <div style={{ marginTop: '12px' }}>
         <button
           onClick={() => setShowBulk(!showBulk)}
           style={{ ...btn, width: '100%' }}

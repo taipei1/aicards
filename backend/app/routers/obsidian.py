@@ -18,11 +18,10 @@ router = APIRouter()
 
 def extract_note_title(content: str, file_path: str) -> str:
     """Extract note title: first # heading, or from filename, or fallback."""
-    # Try first markdown heading (# or ##)
+    # Try first markdown heading (#, ##, ###, etc.)
     for line in content.strip().split('\n'):
         line = line.strip()
-        if line.startswith('# ') or line.startswith('## '):
-            # Remove leading # s and strip
+        if line.startswith('#') and line[0:line.find(' ')] in ['#', '##', '###', '####', '#####', '######']:
             title = re.sub(r'^#+\s*', '', line)
             if title:
                 return title
@@ -31,6 +30,40 @@ def extract_note_title(content: str, file_path: str) -> str:
     match = re.match(r'^h_[a-z0-9]+_(.+)$', filename)
     if match:
         return match[1]
+    # If filename is just h_xxx (hash from LiveSync), try first meaningful content line
+    if re.match(r'^h_[a-z0-9]+$', filename):
+        for line in content.strip().split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            # Skip frontmatter, tag-only lines, empty brackets
+            if line.startswith('---'):
+                continue
+            if line.startswith('#srs') or (line.startswith('#') and len(line) < 20):
+                continue
+            if line.startswith('[') and line.endswith(']'):
+                continue
+            # Skip table rows, separator lines, JSON
+            if line.startswith('|') and line.endswith('|'):
+                continue
+            if line in ('---', '___', '***'):
+                continue
+            if line.startswith('{') and line.endswith('}'):
+                continue
+            # Clean: remove list markers, bold/italic markers, brackets, backticks
+            clean = line
+            # Remove leading list markers (-, *, +, numbers)
+            clean = re.sub(r'^[\-\*\+\.\d]+\s*', '', clean)
+            # Remove leading/trailing markdown noise
+            clean = clean.strip('*_ []|\n\t`')
+            if not clean:
+                continue
+            if len(clean) >= 3 and clean[0].isalpha():
+                return clean[:80]
+            # If it's a number/short code, still show it
+            if clean[0].isalnum():
+                return clean[:80]
+            break
     return filename
 
 
@@ -45,74 +78,96 @@ def get_current_user(db: Session = Depends(get_db)) -> User:
     return user
 
 
+@router.post("/ingest")
+def ingest_obsidian_note(
+    note_data: dict,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """
+    Ingest a single Obsidian note directly (alternative to CouchDB sync).
+    Accepts: {file_path, content, tags?, created_at?, updated_at?}
+    """
+    from datetime import datetime, timezone
+    from sqlalchemy import inspect
+
+    file_path = note_data.get("file_path", "")
+    content = note_data.get("content", "").strip()
+    tags = note_data.get("tags", [])
+    created_at = note_data.get("created_at")
+    updated_at = note_data.get("updated_at")
+
+    if not content:
+        return {"ingested": 0, "error": "empty content"}
+
+    # Parse tags from content if not provided
+    if not tags:
+        tags = list(set(re.findall(r'#(\w+)', content)))
+
+    # Parse timestamps
+    if isinstance(created_at, str):
+        created_at = datetime.fromisoformat(created_at)
+    if isinstance(updated_at, str):
+        updated_at = datetime.fromisoformat(updated_at)
+    if not created_at:
+        created_at = datetime.now(timezone.utc)
+    if not updated_at:
+        updated_at = datetime.now(timezone.utc)
+
+    # Check if note already exists by file_path
+    existing = db.query(ObsidianNote).filter(
+        ObsidianNote.user_id == user.id,
+        ObsidianNote.file_path == file_path
+    ).first()
+
+    if existing:
+        existing.content = content
+        existing.tags = tags
+        existing.updated_at = updated_at
+        db.commit()
+        return {"ingested": 1, "updated": True, "note_id": existing.id}
+
+    # Create new note
+    note = ObsidianNote(
+        user_id=user.id,
+        file_path=file_path,
+        content=content,
+        tags=tags,
+        created_at=created_at,
+        updated_at=updated_at
+    )
+    db.add(note)
+    db.flush()
+
+    # Generate embedding
+    try:
+        embedding = gemini_service.generate_embedding(content)
+        if embedding:
+            embedding_obj = NoteEmbedding(
+                note_id=note.id,
+                embedding=embedding
+            )
+            db.add(embedding_obj)
+    except Exception as e:
+        print(f"[Ingest] Embedding generation failed: {e}")
+
+    db.commit()
+    return {"ingested": 1, "updated": False, "note_id": note.id}
+
+
 @router.post("/sync")
 def sync_obsidian(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """Synchronize Obsidian notes from CouchDB (Self-hosted LiveSync) with database."""
-    # Step 1: Pull notes from CouchDB into local folder
-    try:
-        couchdb = CouchDBSyncService(
-            couchdb_url="http://couchdb:5984",
-            username=settings.couchdb_username,
-            password=settings.couchdb_password,
-            db_name="obsidian-sync"
-        )
-        from pathlib import Path
-        written = couchdb.fetch_vault_as_files(Path(settings.obsidian_folder_path))
-        print(f"[CouchDBSync] Fetched {written} files to {settings.obsidian_folder_path}")
-    except Exception as e:
-        print(f"[CouchDBSync] Error: {e}")
-        return {"synced": 0, "updated": 0, "total": 0, "error": str(e)}
-
-    # Step 2: Scan local folder and sync to DB
-    sync_service = ObsidianSyncService(settings.obsidian_folder_path)
-    notes = sync_service.scan_folder()
-
-    synced = 0
-    updated = 0
-    
-    for note_data in notes:
-        existing = db.query(ObsidianNote).filter(
-            ObsidianNote.user_id == user.id,
-            ObsidianNote.file_path == note_data["file_path"]
-        ).first()
-        
-        if existing:
-            existing.content = note_data["content"]
-            existing.tags = note_data["tags"]
-            existing.updated_at = note_data["updated_at"]
-            updated += 1
-        else:
-            note = ObsidianNote(
-                user_id=user.id,
-                file_path=note_data["file_path"],
-                content=note_data["content"],
-                tags=note_data["tags"],
-                created_at=note_data["created_at"],
-                updated_at=note_data["updated_at"]
-            )
-            db.add(note)
-            db.flush()
-            
-            # Generate and store embedding
-            try:
-                embedding = gemini_service.generate_embedding(note_data["content"])
-                if embedding:
-                    embedding_obj = NoteEmbedding(
-                        note_id=note.id,
-                        embedding=embedding
-                    )
-                    db.add(embedding_obj)
-            except Exception as e:
-                print(f"Embedding generation failed: {e}")
-            
-            synced += 1
-    
-    db.commit()
-    
-    return {"synced": synced, "updated": updated, "total": len(notes)}
+    """DEPRECATED: CouchDB sync removed. Use POST /ingest or the local srs_push.py script."""
+    return {
+        "synced": 0,
+        "updated": 0,
+        "total": 0,
+        "error": "CouchDB sync disabled. Use POST /obsidian/ingest or run srs_push.py locally.",
+        "deprecated": True
+    }
 
 
 @router.get("/notes")

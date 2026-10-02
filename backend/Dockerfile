@@ -13,6 +13,8 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements and install
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+# Install groq separately (dependency resolver sometimes drops it with pinned google-generativeai)
+RUN pip install --no-cache-dir "groq>=1.0.0"
 
 # Copy app
 COPY . .

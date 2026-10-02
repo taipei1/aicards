@@ -307,14 +307,22 @@ export function ObsidianPage() {
               marginBottom: '20px',
               color: 'var(--text-secondary)',
               background: 'var(--bg-primary)',
+              textAlign: 'center',
             }}>
-              <div style={{ fontSize: '0.9rem', marginBottom: '12px' }}>Note preview:</div>
-              {currentNote.content_preview}
-              <div style={{ marginTop: '16px' }}>
-                <button onClick={() => handleGenerateQuestions(currentNote.id)} style={btn}>
-                  Generate Question
-                </button>
+              <div style={{ marginBottom: '12px', color: 'var(--text-primary)', fontSize: '0.95rem' }}>
+                Press <strong>Generate Question</strong> or <strong>Space</strong> to begin reviewing this note
               </div>
+              <button onClick={() => handleGenerateQuestions(currentNote.id)} style={btn}>
+                Generate Question
+              </button>
+              {currentNote.content_preview && (
+                <button
+                  onClick={() => handleGenerateQuestions(currentNote.id)}
+                  style={{ ...btn, marginLeft: '8px' }}
+                >
+                  Ask AI
+                </button>
+              )}
             </div>
           )}
 
