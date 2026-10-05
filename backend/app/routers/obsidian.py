@@ -141,7 +141,7 @@ def ingest_obsidian_note(
 
     # Generate embedding
     try:
-        embedding = gemini_service.generate_embedding(content)
+        embedding = gemini_service.generate_embedding(content, db=db)
         if embedding:
             embedding_obj = NoteEmbedding(
                 note_id=note.id,
@@ -275,21 +275,14 @@ def generate_questions(
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
     
-    # Try Groq first, fallback to Gemini
+    # All LLM calls go through the OmniRoute gateway
     questions = groq_service.generate_questions(
         note.content,
         num_questions=num_questions,
-        advanced=advanced
+        advanced=advanced,
+        db=db,
     )
-    
-    # If Groq fails, try Gemini
-    if not questions or questions[0].get("question", "").startswith("Groq not available"):
-        questions = gemini_service.generate_questions(
-            note.content,
-            num_questions=num_questions,
-            advanced=advanced
-        )
-    
+
     return {"questions": questions, "note_id": note_id}
 
 
@@ -349,15 +342,19 @@ def log_obsidian_review(
         SessionStats.session_date == today,
         SessionStats.module_type == "obsidian"
     ).first()
-    
+
+    seconds = max(0, min(time_seconds, 300))
+
     if stats:
-        stats.minutes_spent += max(1, time_seconds // 60)
+        stats.seconds_spent = (stats.seconds_spent or 0) + seconds
+        stats.minutes_spent = round(stats.seconds_spent / 60.0)
     else:
         stats = SessionStats(
             user_id=user.id,
             session_date=today,
             module_type="obsidian",
-            minutes_spent=max(1, time_seconds // 60)
+            seconds_spent=seconds,
+            minutes_spent=round(seconds / 60.0)
         )
         db.add(stats)
     

@@ -142,6 +142,7 @@ class SessionStats(Base):
     module_type = Column(String(20), nullable=False)  # 'language' or 'obsidian'
     category = Column(String(255), nullable=True)  # tag or language code
     minutes_spent = Column(Integer, default=0)
+    seconds_spent = Column(Integer, default=0)  # real seconds (client caps a card at 30s)
     card_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
@@ -151,6 +152,28 @@ class SessionStats(Base):
         UniqueConstraint('user_id', 'session_date', 'module_type', 'category', name='uq_stats_unique'),
         Index('idx_stats_user_date', 'user_id', 'session_date'),
     )
+
+
+class AuthToken(Base):
+    """Long-lived session token for the single-password gate (90 days)."""
+    __tablename__ = "auth_tokens"
+
+    token = Column(String(64), primary_key=True, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    expires_at = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index('idx_auth_token_expires', 'expires_at'),
+    )
+
+
+class AppSetting(Base):
+    """Key-value app settings (e.g. OmniRoute key set via UI, overrides env)."""
+    __tablename__ = "app_settings"
+
+    key = Column(String(255), primary_key=True)
+    value = Column(Text, nullable=False, default="")
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 class CardReverse(Base):

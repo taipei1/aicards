@@ -235,6 +235,60 @@ def get_due_cards(
     return queue_items[:limit]
 
 
+@router.get("/due-counts")
+def get_due_counts(
+    language: Optional[str] = Query(None, description="Language deck, omit for both en+sk"),
+    tag: Optional[str] = Query(None, description="Filter by tag"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """How many words are due for repetition per language deck (FSRS rule:
+    new cards + last_reviewed + round(stability) days <= now).
+    Counts normal and reverse cards separately."""
+    from datetime import timedelta
+
+    def is_due(last_reviewed, stability) -> bool:
+        if last_reviewed is None:
+            return True
+        last = last_reviewed
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        due_at = last + timedelta(days=round(stability or 1.0))
+        return datetime.now(timezone.utc) >= due_at
+
+    languages = [language] if language else ["en", "sk"]
+    result = {}
+
+    for lang in languages:
+        card_query = db.query(Card.id, Card.stability, Card.last_reviewed).filter(
+            Card.user_id == user.id,
+            Card.language == lang
+        )
+        if tag:
+            card_query = card_query.filter(Card.tags.any(tag))
+        rows = card_query.all()
+        normal_due = sum(1 for _, stability, last in rows if is_due(last, stability))
+
+        rev_query = db.query(CardReverse.stability, CardReverse.last_reviewed).join(
+            Card, CardReverse.card_id == Card.id
+        ).filter(
+            Card.user_id == user.id,
+            Card.language == lang
+        )
+        if tag:
+            rev_query = rev_query.filter(Card.tags.any(tag))
+        rev_rows = rev_query.all()
+        reverse_due = sum(1 for stability, last in rev_rows if is_due(last, stability))
+
+        result[lang] = {
+            "normal": normal_due,
+            "reverse": reverse_due,
+            "total": normal_due + reverse_due,
+        }
+
+    return result[language] if language else result
+
+
 @router.get("/tags", response_model=List[str])
 def get_tags(
     language: Optional[str] = Query(None, description="Filter by language"),

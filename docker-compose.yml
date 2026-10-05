@@ -7,15 +7,23 @@ services:
       dockerfile: Dockerfile
     container_name: srs_backend
     restart: unless-stopped
+    # Lets the container reach the OmniRoute proxy running on the host
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      DATABASE_URL: postgresql://pgadmin:tWLhUy6pzs2KjtKOl2ucf-v2@azure-db-lang-study.postgres.database.azure.com:5432/aicards?sslmode=require
+      DATABASE_URL: ${DATABASE_URL}
       DATABASE_ECHO: "false"
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
-      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      OMNIROUTER_BASE_URL: ${OMNIROUTER_BASE_URL:-http://host.docker.internal:20128/v1}
+      OMNIROUTER_API_KEY: ${OMNIROUTER_API_KEY:-}
+      OMNIROUTER_CHAT_MODEL: ${OMNIROUTER_CHAT_MODEL:-tokenharbor/deepseek-v4.1-flash:free}
+      OMNIROUTER_EMBEDDING_MODEL: ${OMNIROUTER_EMBEDDING_MODEL:-openrouter/openai/text-embedding-3-small}
+      APP_PASSWORD_HASH: ${APP_PASSWORD_HASH:-}
       OBSIDIAN_FOLDER_PATH: /app/obsidian-test
       SRS_TAG: ${SRS_TAG:-srs}
       CORS_ORIGINS: '["https://translatepls.me"]'
@@ -33,5 +41,7 @@ services:
       dockerfile: Dockerfile
     container_name: srs_frontend
     restart: unless-stopped
+    depends_on:
+      - backend
     ports:
       - "3006:3000"

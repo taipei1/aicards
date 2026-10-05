@@ -1,16 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { LanguagePage } from './pages/LanguagePage';
 import { ObsidianPage } from './pages/ObsidianPage';
 import { StatsPage } from './pages/StatsPage';
 import { WordListPage } from './pages/WordListPage';
 import { AddWordPage } from './pages/AddWordPage';
 import { SentencePage } from './pages/SentencePage';
+import { SettingsPage } from './pages/SettingsPage';
+import { LoginPage } from './pages/LoginPage';
+import { getAuthStatus, logout, UNAUTHORIZED_EVENT } from './services/api';
 
-type Page = 'language' | 'obsidian' | 'stats' | 'words' | 'emergency' | 'add-word' | 'sentences';
+type Page = 'language' | 'obsidian' | 'stats' | 'words' | 'emergency' | 'add-word' | 'sentences' | 'settings';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('language');
   const [darkMode, setDarkMode] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authed, setAuthed] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem('theme');
@@ -18,6 +23,39 @@ export default function App() {
     const isDark = saved ? saved === 'dark' : prefersDark;
     setDarkMode(isDark);
     document.documentElement.classList.toggle('dark-mode', isDark);
+  }, []);
+
+  // Check existing token on load — password is only asked when there is none
+  useEffect(() => {
+    let cancelled = false;
+    getAuthStatus()
+      .then((s) => {
+        if (cancelled) return;
+        setAuthed(s.valid);
+        setAuthChecked(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Server unreachable or gate disabled → let the page try to load
+        setAuthed(true);
+        setAuthChecked(true);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Any 401 from axios → back to the login screen
+  useEffect(() => {
+    const onUnauthorized = () => {
+      setAuthed(false);
+      setAuthChecked(true);
+    };
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    await logout();
+    setAuthed(false);
   }, []);
 
   const toggleTheme = () => {
@@ -35,7 +73,24 @@ export default function App() {
     { key: 'words', label: 'All Words' },
     { key: 'obsidian', label: 'Obsidian' },
     { key: 'stats', label: 'Stats' },
+    { key: 'settings', label: '⚙️ Settings' },
   ];
+
+  if (!authChecked) {
+    return (
+      <div style={{ fontFamily: 'system-ui, sans-serif', maxWidth: '960px', margin: '0 auto', padding: '12px' }}>
+        <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>Loading...</div>
+      </div>
+    );
+  }
+
+  if (!authed) {
+    return (
+      <div style={{ fontFamily: 'system-ui, sans-serif', maxWidth: '960px', margin: '0 auto', padding: '12px' }}>
+        <LoginPage onSuccess={() => setAuthed(true)} />
+      </div>
+    );
+  }
 
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif', maxWidth: '960px', margin: '0 auto', padding: '12px' }}>
@@ -56,20 +111,39 @@ export default function App() {
         }}>
           SRS
         </h1>
-        <button
-          onClick={toggleTheme}
-          style={{
-            background: 'none',
-            border: 'none',
-            fontSize: '1.3rem',
-            cursor: 'pointer',
-            padding: '4px',
-            lineHeight: '1',
-          }}
-          aria-label="Toggle theme"
-        >
-          {darkMode ? '☀️' : '🌙'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            onClick={handleLogout}
+            title="Log out"
+            style={{
+              background: 'none',
+              border: '2px solid var(--border-primary)',
+              color: 'var(--text-primary)',
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+              fontWeight: 'bold',
+              minHeight: '36px',
+              padding: '4px 10px',
+              borderRadius: '4px',
+            }}
+          >
+            Logout
+          </button>
+          <button
+            onClick={toggleTheme}
+            style={{
+              background: 'none',
+              border: 'none',
+              fontSize: '1.3rem',
+              cursor: 'pointer',
+              padding: '4px',
+              lineHeight: '1',
+            }}
+            aria-label="Toggle theme"
+          >
+            {darkMode ? '☀️' : '🌙'}
+          </button>
+        </div>
       </div>
 
       {/* Navigation */}
@@ -109,6 +183,7 @@ export default function App() {
       {currentPage === 'words' && <WordListPage />}
       {currentPage === 'obsidian' && <ObsidianPage />}
       {currentPage === 'stats' && <StatsPage />}
+      {currentPage === 'settings' && <SettingsPage />}
     </div>
   );
 }

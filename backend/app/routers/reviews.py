@@ -21,7 +21,13 @@ def get_current_user(db: Session = Depends(get_db)) -> User:
 
 
 def _update_session_stats(db: Session, user: User, language: str, time_spent_seconds: int):
-    """Track session time in stats."""
+    """Track session time in stats.
+
+    The client caps a single card at 30 seconds (so idling on a card is not
+    billed), so we must accumulate raw seconds and derive minutes from the
+    running total — adding `seconds // 60` per card would round every card
+    up to a full minute.
+    """
     today = datetime.now(timezone.utc).date().isoformat()
     stats = db.query(SessionStats).filter(
         SessionStats.user_id == user.id,
@@ -29,9 +35,12 @@ def _update_session_stats(db: Session, user: User, language: str, time_spent_sec
         SessionStats.module_type == "language",
         SessionStats.category == language
     ).first()
-    
+
+    seconds = max(0, min(time_spent_seconds, 30))
+
     if stats:
-        stats.minutes_spent += max(1, time_spent_seconds // 60)
+        stats.seconds_spent = (stats.seconds_spent or 0) + seconds
+        stats.minutes_spent = round(stats.seconds_spent / 60.0)
         stats.card_count += 1
     else:
         stats = SessionStats(
@@ -39,7 +48,8 @@ def _update_session_stats(db: Session, user: User, language: str, time_spent_sec
             session_date=today,
             module_type="language",
             category=language,
-            minutes_spent=max(1, time_spent_seconds // 60),
+            seconds_spent=seconds,
+            minutes_spent=round(seconds / 60.0),
             card_count=1
         )
         db.add(stats)

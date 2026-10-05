@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  getCardsDue, getCardsByTag, getAllTags,
+  getCardsDue, getCardsByTag, getAllTags, getDueCounts,
   importCards, deleteCard, logReview, logReverseReview, updateCard, createCard,
 } from '../services/api';
 import { CardDisplay } from '../components/CardDisplay';
@@ -39,6 +39,18 @@ export function LanguagePage({ mode }: Props) {
 
   // Stats
   const [sessionStats, setSessionStats] = useState({ total: 0, again: 0, hard: 0, good: 0, easy: 0, reverse: 0 });
+
+  // Due-for-repetition counter for the current deck (motivation badge)
+  const [dueCount, setDueCount] = useState<{ normal: number; reverse: number; total: number } | null>(null);
+
+  const refreshDue = useCallback(async () => {
+    try {
+      const r = await getDueCounts(language, selectedTag || undefined);
+      setDueCount(r[language] || null);
+    } catch {
+      setDueCount(null);
+    }
+  }, [language, selectedTag]);
 
   // Load tags
   useEffect(() => {
@@ -87,6 +99,7 @@ export function LanguagePage({ mode }: Props) {
 
   useEffect(() => {
     loadItems();
+    refreshDue();
   }, [language, selectedTag, mode]);
 
   const handleGrade = useCallback(async (rating: 1 | 2 | 3 | 4, timeSpent: number) => {
@@ -135,11 +148,13 @@ export function LanguagePage({ mode }: Props) {
         } else {
           await loadItems();
         }
+        // Card reviewed → one less due word in this deck
+        refreshDue();
       }
     } catch (err) {
       console.error('Failed to log review:', err);
     }
-  }, [items, currentIndex, mode, language, selectedTag]);
+  }, [items, currentIndex, mode, language, selectedTag, refreshDue]);
 
   const handleDelete = async () => {
     const item = items[currentIndex];
@@ -246,9 +261,21 @@ export function LanguagePage({ mode }: Props) {
           {showImport ? 'Hide Import' : mode === 'emergency' ? '+ Add Word' : 'Import'}
         </button>
 
-        <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-          {items.length} items
-        </span>
+        {dueCount !== null && (
+          <span
+            title={`Due: ${dueCount.normal} normal · ${dueCount.reverse} reverse`}
+            style={{
+              color: 'var(--text-secondary)',
+              fontSize: '0.9rem',
+              padding: '2px 8px',
+              border: '1px solid var(--border-light)',
+              borderRadius: '4px',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Due: {dueCount.total}
+          </span>
+        )}
 
         {mode === 'emergency' && (
           <span style={{
@@ -414,7 +441,7 @@ export function LanguagePage({ mode }: Props) {
 
       {/* Shortcuts */}
       <div style={{ marginTop: '20px', color: 'var(--text-secondary)', fontSize: '0.8rem', textAlign: 'center' }}>
-        Space: flip | 1-4: grade | R: replay | D: delete | T: type
+        Space: flip | 1-4: grade | R: replay | D: delete | T: type | M: more
         {mode === 'emergency' && ' | Again=1 stays in queue'}
       </div>
     </div>
