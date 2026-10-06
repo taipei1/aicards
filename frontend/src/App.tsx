@@ -13,6 +13,10 @@ type Page = 'language' | 'obsidian' | 'stats' | 'words' | 'emergency' | 'add-wor
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('language');
+  // Pages, once opened, stay mounted (hidden with display:none) so switching
+  // tabs never resets their state — e.g. an in-flight More request or the card
+  // timer in Learning keeps going while you look at Stats.
+  const [visited, setVisited] = useState<Set<Page>>(() => new Set<Page>(['language']));
   const [darkMode, setDarkMode] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [authed, setAuthed] = useState(false);
@@ -57,6 +61,10 @@ export default function App() {
     await logout();
     setAuthed(false);
   }, []);
+
+  useEffect(() => {
+    setVisited((v) => (v.has(currentPage) ? v : new Set(v).add(currentPage)));
+  }, [currentPage]);
 
   const toggleTheme = () => {
     const next = !darkMode;
@@ -175,15 +183,19 @@ export default function App() {
         ))}
       </nav>
 
-      {/* Page content */}
-      {currentPage === 'language' && <LanguagePage mode="normal" />}
-      {currentPage === 'emergency' && <LanguagePage mode="emergency" />}
-      {currentPage === 'add-word' && <AddWordPage />}
-      {currentPage === 'sentences' && <SentencePage onNavigate={(p) => setCurrentPage(p as Page)} />}
-      {currentPage === 'words' && <WordListPage />}
-      {currentPage === 'obsidian' && <ObsidianPage />}
-      {currentPage === 'stats' && <StatsPage />}
-      {currentPage === 'settings' && <SettingsPage />}
+      {/* Page content — every visited page stays mounted; only visibility changes */}
+      {[...visited].map((p) => (
+        <div key={p} style={{ display: currentPage === p ? 'block' : 'none' }}>
+          {p === 'language' && <LanguagePage mode="normal" />}
+          {p === 'emergency' && <LanguagePage mode="emergency" />}
+          {p === 'add-word' && <AddWordPage />}
+          {p === 'sentences' && <SentencePage onNavigate={(np) => setCurrentPage(np as Page)} />}
+          {p === 'words' && <WordListPage />}
+          {p === 'obsidian' && <ObsidianPage />}
+          {p === 'stats' && <StatsPage />}
+          {p === 'settings' && <SettingsPage />}
+        </div>
+      ))}
     </div>
   );
 }

@@ -334,6 +334,7 @@ export async function getSummaryStats(days: number = 30) {
 export interface ActivityDay {
   date: string;
   cards: number;
+  seconds: number;
   minutes: number;
 }
 
@@ -343,12 +344,29 @@ export interface ActivityStats {
   to: string;
   daily: ActivityDay[];
   total_cards: number;
+  total_seconds: number;
   total_minutes: number;
   active_days: number;
+  hour2_days: number;
 }
 
 export async function getActivityStats(days: number = 105): Promise<ActivityStats> {
   const res = await api.get('/stats/activity', { params: { days } });
+  return res.data;
+}
+
+export interface MaturityTrendPoint {
+  date: string;
+  repeated: number;
+  new: number;
+}
+
+export async function getMaturityTrend(days: number = 14): Promise<{
+  days: number;
+  total_cards: number;
+  series: MaturityTrendPoint[];
+}> {
+  const res = await api.get('/stats/maturity-trend', { params: { days } });
   return res.data;
 }
 

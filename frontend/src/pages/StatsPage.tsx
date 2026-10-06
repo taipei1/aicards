@@ -1,7 +1,7 @@
 import { Fragment, useState, useEffect } from 'react';
 import {
   getDailyStats, getSummaryStats, getActivityStats, getStreakStats,
-  getMaturityStats, getForecast,
+  getMaturityStats, getMaturityTrend, getForecast,
 } from '../services/api';
 import type { CSSProperties } from 'react';
 import type { ActivityStats, StreakStats, MaturityBucket } from '../services/api';
@@ -80,14 +80,22 @@ function tile(label: string, value: string, sub?: string, color?: string) {
   );
 }
 
+// Monday 00:00 UTC of the week that contains `ref`.
+function mondayOf(ref: Date): Date {
+  const d = new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), ref.getUTCDate()));
+  const dow = (d.getUTCDay() + 6) % 7; // Mon = 0
+  d.setUTCDate(d.getUTCDate() - dow);
+  return d;
+}
+
 export function StatsPage() {
   const [dailyStats, setDailyStats] = useState<DailyStats | null>(null);
   const [summaryStats, setSummaryStats] = useState<SummaryStats | null>(null);
   const [activity, setActivity] = useState<ActivityStats | null>(null);
   const [streak, setStreak] = useState<StreakStats | null>(null);
   const [maturity, setMaturity] = useState<{ by_language: Record<string, MaturityBucket>; totals: MaturityBucket } | null>(null);
+  const [trend, setTrend] = useState<{ days: number; total_cards: number; series: { date: string; repeated: number; new: number }[] } | null>(null);
   const [forecast, setForecast] = useState<Awaited<ReturnType<typeof getForecast>> | null>(null);
-  const [barDays, setBarDays] = useState(30);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -97,12 +105,13 @@ export function StatsPage() {
   const loadStats = async () => {
     setLoading(true);
     try {
-      const [daily, summary, act, str, mat, fc] = await Promise.all([
+      const [daily, summary, act, str, mat, tr, fc] = await Promise.all([
         getDailyStats(),
-        getSummaryStats(30),
-        getActivityStats(105),
+        getSummaryStats(7),
+        getActivityStats(365),
         getStreakStats(),
         getMaturityStats(),
+        getMaturityTrend(14),
         getForecast(14),
       ]);
       setDailyStats(daily);
@@ -110,6 +119,7 @@ export function StatsPage() {
       setActivity(act);
       setStreak(str);
       setMaturity(mat);
+      setTrend(tr);
       setForecast(fc);
     } catch (err) {
       console.error('Failed to load stats:', err);
@@ -125,19 +135,17 @@ export function StatsPage() {
   const today = new Date().toISOString().slice(0, 10);
   const daily = activity?.daily || [];
 
-  // Heatmap: pad the window to whole weeks (Mon-first)
-  const heatWeeks: { date: string; cards: number }[][] = [];
+  // Day calendar: a full year (365 days, ending today), week-columns
+  // (Mon-first) × 7 day-rows. Leading blanks align the first day to Monday.
+  const calendar: { date: string; cards: number; seconds: number }[][] = [];
   if (daily.length) {
-    const firstDow = (new Date(daily[0].date + 'T00:00:00').getDay() + 6) % 7; // Mon=0
-    let week: { date: string; cards: number }[] = Array(firstDow).fill(null).map(() => ({ date: '', cards: -1 }));
-    daily.forEach((d) => {
-      week.push({ date: d.date, cards: d.cards });
-      if (week.length === 7) { heatWeeks.push(week); week = []; }
-    });
-    if (week.length) {
-      while (week.length < 7) week.push({ date: '', cards: -1 });
-      heatWeeks.push(week);
-    }
+    const first = daily[0].date;
+    const firstDow = (new Date(first + 'T00:00:00Z').getUTCDay() + 6) % 7; // Mon = 0
+    const cells: { date: string; cards: number; seconds: number }[] = [];
+    for (let i = 0; i < firstDow; i++) cells.push({ date: '', cards: -1, seconds: -1 });
+    daily.forEach((d) => cells.push({ date: d.date, cards: d.cards, seconds: d.seconds }));
+    while (cells.length % 7 !== 0) cells.push({ date: '', cards: -1, seconds: -1 });
+    for (let i = 0; i < cells.length; i += 7) calendar.push(cells.slice(i, i + 7));
   }
   const maxCards = Math.max(1, ...daily.map((d) => d.cards));
   const heatLevel = (cards: number) => {
@@ -149,22 +157,40 @@ export function StatsPage() {
     if (ratio > 0.25) return '#a8d8a8';
     return '#d4ead4';
   };
+  const dayFmt = (iso: string) => {
+    if (!iso) return '';
+    const [, m, d] = iso.split('-');
+    return `${d}.${m}`;
+  };
 
-  // Cards-per-day bars
-  const bars = daily.slice(-barDays);
-  const barMax = Math.max(1, ...bars.map((b) => b.cards));
-  const barAvg = bars.length ? bars.reduce((s, b) => s + b.cards, 0) / bars.length : 0;
+  // Duration formatting for the top tiles.
+  const humanDuration = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.round((seconds % 3600) / 60);
+    return h > 0 ? `${h}ч ${m}м` : `${m}м`;
+  };
+
+  // This week (Monday → Sunday)
+  const now = new Date();
+  const monday = mondayOf(now);
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  const mondayIso = monday.toISOString().slice(0, 10);
+  const sundayIso = sunday.toISOString().slice(0, 10);
+  const weekDays = daily.filter((d) => d.date >= mondayIso && d.date <= sundayIso);
+  const weekSeconds = weekDays.reduce((s, d) => s + (d.seconds || 0), 0);
+  const weekCards = weekDays.reduce((s, d) => s + d.cards, 0);
 
   // Forecast bars
   const fcMax = Math.max(1, ...(forecast?.forecast || []).map((f) => f.total));
 
-  const last14Cards = daily.slice(-14).reduce((s, d) => s + d.cards, 0);
+  const trendSeries = trend?.series || [];
 
   return (
     <div>
       <h2 style={{ marginBottom: '20px', color: 'var(--text-primary)' }}>Statistics</h2>
 
-      {/* ───── KPI tiles ───── */}
+      {/* ───── KPI tiles (numbers live only here) ───── */}
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
         {streak && tile(
           'Стрик',
@@ -173,22 +199,31 @@ export function StatsPage() {
           streak.current_streak > 0 ? 'var(--text-success)' : 'var(--text-danger)',
         )}
         {dailyStats && tile('Сегодня карточек', String(dailyStats.card_count), `${dailyStats.total_minutes} мин`)}
-        {streak && tile(
-          'Дней без повторения',
-          streak.days_since_last_review === 0 ? '0' : String(streak.days_since_last_review),
-          streak.last_review_date ? `последний: ${streak.last_review_date}` : 'ещё ни разу',
-          (streak.days_since_last_review ?? 99) > 2 ? 'var(--text-danger)' : undefined,
+        {summaryStats && tile(
+          'Итог за неделю',
+          String(summaryStats.total_cards),
+          `Пн ${dayFmt(mondayIso)} – Вс ${dayFmt(sundayIso)} · ${humanDuration(weekSeconds)}`,
         )}
-        {summaryStats && tile('Карточек за 30 дней', String(summaryStats.total_cards), `${summaryStats.active_days} активных дней`)}
+        {activity && tile(
+          'Дней >2ч',
+          String(activity.hour2_days),
+          'из 365 дней',
+          activity.hour2_days > 0 ? 'var(--text-success)' : undefined,
+        )}
+        {maturity && tile(
+          'Новых слов',
+          String(maturity.totals.new),
+          `из ${maturity.totals.total} — ещё не повторялись`,
+        )}
       </div>
 
-      {/* ───── Calendar heatmap ───── */}
+      {/* ───── Day calendar: exactly a year ───── */}
       <div style={panel}>
         <h3 style={panelTitle}>Календарь активности</h3>
-        <p style={hint}>15 недель. Тёмнее — больше карточек за день.</p>
+        <p style={hint}>Ровно год — 365 дней. Тёмнее — больше карточек за день. Колонка — неделя (Пн сверху … Вс снизу).</p>
         <div style={{ overflowX: 'auto', paddingBottom: '4px' }}>
           <div style={{ display: 'flex', gap: '3px', minWidth: 'min-content' }}>
-            {heatWeeks.map((week, wi) => (
+            {calendar.map((week, wi) => (
               <div key={wi} style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                 {week.map((day, di) => (
                   <div
@@ -216,112 +251,13 @@ export function StatsPage() {
         </div>
       </div>
 
-      {/* ───── Cards per day ───── */}
-      <div style={panel}>
-        <h3 style={panelTitle}>Карточек в день</h3>
-        <p style={hint}>Средняя за период: {barAvg.toFixed(1)} карт/день. Всего {last14Cards} за последние 14 дней.</p>
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-          {[30, 90].map((d) => (
-            <button
-              key={d}
-              onClick={() => setBarDays(d)}
-              style={{
-                padding: '4px 12px',
-                fontSize: '0.8rem',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                borderRadius: '4px',
-                minHeight: '32px',
-                border: `2px solid var(--border-primary)`,
-                background: barDays === d ? 'var(--text-primary)' : 'var(--bg-primary)',
-                color: barDays === d ? 'var(--bg-primary)' : 'var(--text-primary)',
-              }}
-            >
-              {d} дней
-            </button>
-          ))}
-        </div>
-        <div style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          gap: barDays > 60 ? '1px' : '3px',
-          height: '110px',
-          borderBottom: '1px solid var(--border-primary)',
-          overflow: 'hidden',
-        }}>
-          {bars.map((b) => (
-            <div
-              key={b.date}
-              title={`${b.date}: ${b.cards} карт., ${b.minutes} мин`}
-              style={{
-                flex: '1 1 0',
-                minWidth: '2px',
-                height: `${Math.max(b.cards > 0 ? 3 : 0, (b.cards / barMax) * 100)}%`,
-                background: b.cards > 0 ? 'var(--accent)' : 'transparent',
-                borderTop: b.cards > barAvg && b.cards > 0 ? '2px solid var(--text-success)' : 'none',
-                borderBottom: b.cards === 0 ? '2px solid var(--border-light)' : 'none',
-              }}
-            />
-          ))}
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-          <span>{bars[0]?.date}</span>
-          <span>сегодня</span>
-        </div>
-      </div>
-
-      {/* ───── Forecast ───── */}
-      {forecast && (
-        <div style={panel}>
-          <h3 style={panelTitle}>Нагрузка на {forecast.days} дней</h3>
-          <p style={hint}>
-            Сколько слов «пора повторять» в каждый день. Считаются только уже повторявшиеся слова —
-            у новых слов нет даты повторения.
-          </p>
-          {forecast.overdue_total > 0 && (
-            <div style={{
-              padding: '8px 10px',
-              marginBottom: '12px',
-              background: 'var(--bg-danger)',
-              color: 'var(--text-danger)',
-              borderRadius: '4px',
-              fontSize: '0.85rem',
-              fontWeight: 'bold',
-            }}>
-              🔁 Уже просрочено: {forecast.overdue_total} (прямых {forecast.overdue_normal}, обратных {forecast.overdue_reverse})
-            </div>
-          )}
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', height: '90px', borderBottom: '1px solid var(--border-primary)' }}>
-            {forecast.forecast.map((f) => (
-              <div
-                key={f.date}
-                title={`${f.date}: ${f.total} (прямых ${f.normal}, обратных ${f.reverse})`}
-                style={{ flex: '1 1 0', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }}
-              >
-                <div style={{ height: `${(f.reverse / fcMax) * 100}%`, background: 'var(--text-danger)', minHeight: f.reverse > 0 ? '2px' : 0 }} />
-                <div style={{ height: `${(f.normal / fcMax) * 100}%`, background: 'var(--accent)', minHeight: f.normal > 0 ? '2px' : 0 }} />
-              </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            <span>сегодня</span>
-            <span>через {forecast.days} дн.</span>
-          </div>
-          <div style={{ display: 'flex', gap: '12px', fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '8px' }}>
-            <span><span style={{ display: 'inline-block', width: '10px', height: '10px', background: 'var(--accent)', marginRight: '4px' }} />прямые</span>
-            <span><span style={{ display: 'inline-block', width: '10px', height: '10px', background: 'var(--text-danger)', marginRight: '4px' }} />обратные</span>
-            {forecast.peak_total > 0 && <span>пик: {forecast.peak_total} слов {forecast.peak_day}</span>}
-          </div>
-        </div>
-      )}
-
-      {/* ───── Maturity ───── */}
+      {/* ───── Maturity in dynamics ───── */}
       {maturity && (
         <div style={panel}>
           <h3 style={panelTitle}>Зрелость колоды</h3>
           <p style={hint}>
-            По фактическому числу повторений, а не по FSRS stability — она завышена импортом
-            (у слов «стабильность» доходила до 3000+ дней).
+            По фактическому числу повторений. Полоса — текущий срез, линия ниже — как менялось число
+            «повторялось хотя бы раз» за 14 дней.
           </p>
           {Object.entries(maturity.by_language).map(([lang, b]) => (
             <div key={lang} style={{ marginBottom: '14px' }}>
@@ -364,6 +300,19 @@ export function StatsPage() {
               </span>
             ))}
           </div>
+
+          {trendSeries.length > 1 && (
+            <div style={{ marginTop: '16px' }}>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                Динамика за 14 дней: всего {trend?.total_cards} слов, повторялось{' '}
+                {trendSeries[0].repeated} → <span style={{ color: 'var(--text-primary)', fontWeight: 'bold' }}>{trendSeries[trendSeries.length - 1].repeated}</span>
+                {' '}({trendSeries[trendSeries.length - 1].repeated - trendSeries[0].repeated >= 0 ? '+' : ''}
+                {trendSeries[trendSeries.length - 1].repeated - trendSeries[0].repeated})
+              </div>
+              <TrendChart series={trendSeries} />
+            </div>
+          )}
+
           <div style={{ marginTop: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
             Всего повторялось хотя бы раз: {maturity.totals.total - maturity.totals.new} из {maturity.totals.total}
             {' '}({Math.round(((maturity.totals.total - maturity.totals.new) / maturity.totals.total) * 100)}%)
@@ -371,18 +320,61 @@ export function StatsPage() {
         </div>
       )}
 
-      {/* ───── Period summary ───── */}
+      {/* ───── Forecast ───── */}
+      {forecast && (
+        <div style={panel}>
+          <h3 style={panelTitle}>Ближайшая нагрузка</h3>
+          <p style={hint}>
+            Сколько слов «пора повторять» в каждый день. Считаются только уже повторявшиеся слова —
+            у новых слов нет даты повторения.
+          </p>
+          {forecast.overdue_total > 0 && (
+            <div style={{
+              padding: '8px 10px',
+              marginBottom: '12px',
+              background: 'var(--bg-danger)',
+              color: 'var(--text-danger)',
+              borderRadius: '4px',
+              fontSize: '0.85rem',
+              fontWeight: 'bold',
+            }}>
+              🔁 Уже просрочено: {forecast.overdue_total} (прямых {forecast.overdue_normal}, обратных {forecast.overdue_reverse})
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', height: '90px', borderBottom: '1px solid var(--border-primary)' }}>
+            {forecast.forecast.map((f) => (
+              <div
+                key={f.date}
+                title={`${f.date}: ${f.total} (прямых ${f.normal}, обратных ${f.reverse})`}
+                style={{ flex: '1 1 0', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }}
+              >
+                <div style={{ height: `${(f.reverse / fcMax) * 100}%`, background: 'var(--text-danger)', minHeight: f.reverse > 0 ? '2px' : 0 }} />
+                <div style={{ height: `${(f.normal / fcMax) * 100}%`, background: 'var(--accent)', minHeight: f.normal > 0 ? '2px' : 0 }} />
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+            <span>сегодня</span>
+            <span>через {forecast.days} дн.</span>
+          </div>
+          <div style={{ display: 'flex', gap: '12px', fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '8px' }}>
+            <span><span style={{ display: 'inline-block', width: '10px', height: '10px', background: 'var(--accent)', marginRight: '4px' }} />прямые</span>
+            <span><span style={{ display: 'inline-block', width: '10px', height: '10px', background: 'var(--text-danger)', marginRight: '4px' }} />обратные</span>
+            {forecast.peak_total > 0 && <span>пик: {forecast.peak_total} слов {forecast.peak_day}</span>}
+          </div>
+        </div>
+      )}
+
+      {/* ───── Period summary (no numbers repeated from the tiles) ───── */}
       {summaryStats && (
         <div style={panel}>
-          <h3 style={panelTitle}>Итого за {summaryStats.period_days} дней</h3>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
-            {tile('Время', `${summaryStats.total_minutes} мин`, `в среднем ${summaryStats.avg_per_day} мин/день`)}
-            {tile('Карточек', String(summaryStats.total_cards), `${summaryStats.active_days} активных дней`)}
-            {maturity && tile('Новых слов', String(maturity.totals.new), `из ${maturity.totals.total} — ещё не повторялись`)}
-          </div>
+          <h3 style={panelTitle}>Итого за неделю (Пн–Вс)</h3>
+          <p style={hint}>
+            {dayFmt(mondayIso)} – {dayFmt(sundayIso)} · {weekDays.length} дней в неделе · {weekCards} карточек
+          </p>
           {Object.keys(summaryStats.by_category).length > 0 && (
             <div>
-              <div style={{ color: 'var(--text-secondary)', marginBottom: '6px', fontSize: '0.85rem' }}>По колодам:</div>
+              <div style={{ color: 'var(--text-secondary)', marginBottom: '6px', fontSize: '0.85rem' }}>По колодам (время):</div>
               {Object.entries(summaryStats.by_category)
                 .sort(([, a], [, b]) => b - a)
                 .map(([cat, mins]) => {
@@ -432,6 +424,34 @@ export function StatsPage() {
       }}>
         Refresh
       </button>
+    </div>
+  );
+}
+
+// Inline SVG line chart: repeated words over the trend window.
+function TrendChart({ series }: { series: { date: string; repeated: number; new: number }[] }) {
+  const W = 620, H = 90, PAD = 6;
+  const vals = series.map((p) => p.repeated);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const span = Math.max(1, max - min);
+  const stepX = (W - PAD * 2) / Math.max(1, series.length - 1);
+  const y = (v: number) => H - PAD - ((v - min) / span) * (H - PAD * 2);
+  const pts = series.map((p, i) => `${PAD + i * stepX},${y(p.repeated)}`).join(' ');
+  const area = `${PAD},${H - PAD} ${pts} ${PAD + (series.length - 1) * stepX},${H - PAD}`;
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <svg width={W} height={H} style={{ display: 'block', minWidth: '420px' }}>
+        <polygon points={area} fill="var(--accent)" opacity={0.15} />
+        <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth={2} />
+        {series.map((p, i) => (
+          <circle key={p.date} cx={PAD + i * stepX} cy={y(p.repeated)} r={2.5} fill="var(--accent)">
+            <title>{`${p.date}: повторялось ${p.repeated} · новых ${p.new}`}</title>
+          </circle>
+        ))}
+        <text x={PAD} y={H - 1} fontSize={9} fill="var(--text-secondary)">{series[0]?.date.slice(5)}</text>
+        <text x={W - PAD} y={H - 1} fontSize={9} fill="var(--text-secondary)" textAnchor="end">{series[series.length - 1]?.date.slice(5)}</text>
+      </svg>
     </div>
   );
 }

@@ -78,6 +78,9 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit }: CardDisplayProp
   const [timer, setTimer] = useState(30);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef(Date.now());
+  const extraSecondsRef = useRef(0);   // seconds added by pressing "More"
+  const timerTotalRef = useRef(30);    // total countdown length for this card
+  const moreOpenRef = useRef(false);   // pause the countdown while More is open
   const speakTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -102,6 +105,8 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit }: CardDisplayProp
     setTimer(30);
     setShowBack(false);
     startTimeRef.current = Date.now();
+    extraSecondsRef.current = 0;
+    timerTotalRef.current = 30;
 
     // Must be cleared on cleanup and on manual interaction: otherwise the
     // delayed auto-speak lands on top of a word the user just clicked.
@@ -113,6 +118,9 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit }: CardDisplayProp
     speakTimerRef.current = speakTimer;
 
     timerRef.current = setInterval(() => {
+      // Paused (not counted down) while the More panel is open — but wall time
+      // spent reading it still counts toward the grade (see getTimeSpent).
+      if (moreOpenRef.current) return;
       setTimer((t) => {
         if (t <= 1) {
           if (timerRef.current) clearInterval(timerRef.current);
@@ -182,7 +190,9 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit }: CardDisplayProp
 
   const getTimeSpent = () => {
     const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
-    return Math.min(30, elapsed);
+    // Count wall time spent on the card (including reading the More panel),
+    // plus the extra seconds added by "More". Capped at the timer length.
+    return Math.min(timerTotalRef.current, elapsed + extraSecondsRef.current);
   };
 
   const handleKeyDown = useCallback(
@@ -267,17 +277,32 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit }: CardDisplayProp
     setNotesLoading(false);
   }, [notesLoading, examplesNotes, examplesSynonyms, item.card_id]);
 
-  // Fire both in parallel — each block renders as soon as it lands
+  // Fire both in parallel — each block renders as soon as it lands.
+  // Opening More also adds 60s to the card timer (see the More button).
   const loadMore = useCallback((force: boolean) => {
     setShowExamples(true);
     void loadExamples(force);
     void loadNotes(force);
   }, [loadExamples, loadNotes]);
 
+  // More adds +60s to the countdown and extends the cap so the added time
+  // still counts toward the grade; while the panel is open the countdown pauses.
+  const addMoreTime = useCallback(() => {
+    setTimer((t) => t + 60);
+    timerTotalRef.current += 60;
+    extraSecondsRef.current += 60;
+    moreOpenRef.current = true;
+  }, []);
+
   const toggleMore = useCallback(() => {
-    if (showExamples) setShowExamples(false);
-    else loadMore(false);
-  }, [showExamples, loadMore]);
+    if (showExamples) {
+      setShowExamples(false);
+      moreOpenRef.current = false;
+    } else {
+      addMoreTime();
+      loadMore(false);
+    }
+  }, [showExamples, addMoreTime, loadMore]);
 
   // KeyM toggles the More panel (Space flip, 1-4 grade, D delete, R replay, T type)
   useEffect(() => {

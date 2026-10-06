@@ -123,6 +123,7 @@ def get_activity(
         r.day.isoformat(): {
             "date": r.day.isoformat(),
             "cards": r.cards,
+            "seconds": int(r.seconds or 0),
             "minutes": _minutes(r.seconds),
         }
         for r in rows
@@ -134,18 +135,22 @@ def get_activity(
     cursor = since
     while cursor <= today:
         key = cursor.isoformat()
-        filled.append(per_day.get(key, {"date": key, "cards": 0, "minutes": 0.0}))
+        filled.append(per_day.get(key, {"date": key, "cards": 0, "seconds": 0, "minutes": 0.0}))
         cursor += timedelta(days=1)
 
     active_days = [d for d in filled if d["cards"] > 0]
+    # Days with more than two hours of study (7200s), from real review time.
+    hour2_days = sum(1 for d in filled if d["seconds"] > 7200)
     return {
         "days": days,
         "from": since.isoformat(),
         "to": today.isoformat(),
         "daily": filled,
         "total_cards": sum(d["cards"] for d in filled),
-        "total_minutes": _minutes(sum(d["minutes"] for d in filled)),
+        "total_seconds": sum(d["seconds"] for d in filled),
+        "total_minutes": _minutes(sum(d["seconds"] for d in filled)),
         "active_days": len(active_days),
+        "hour2_days": hour2_days,
     }
 
 
@@ -247,6 +252,58 @@ def get_maturity(
             totals[k] += v[k]
 
     return {"by_language": by_language, "totals": totals}
+
+
+@router.get("/maturity-trend")
+def get_maturity_trend(
+    days: int = Query(14, description="Window of the trend in days"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Deck maturity over time: words already repeated at least once, per day.
+
+    A word counts as 'repeated' on days from its first review onwards (all
+    reviews of a card are at or after the first one), so the curve shows how
+    the deck fills up. Snapshot is taken at the end of each day, oldest first.
+    """
+    horizon = max(1, days)
+    today = datetime.now(timezone.utc).date()
+    start = today - timedelta(days=horizon - 1)
+    from app.models import Card
+
+    rows = db.execute(text("""
+        SELECT first_day, count(*)::int AS n
+        FROM (
+            SELECT c.id AS card_id, min(r.review_time::date) AS first_day
+            FROM cards c
+            JOIN users u ON u.id = c.user_id
+            JOIN reviews r ON r.card_id = c.id
+            WHERE u.username = 'default'
+            GROUP BY c.id
+        ) t
+        GROUP BY first_day
+    """)).fetchall()
+
+    def cumulative_before(day: date) -> int:
+        return sum(r.n for r in rows if r.first_day and r.first_day <= day)
+
+    total_cards = db.query(Card).filter(Card.user_id == user.id).count()
+
+    series = []
+    for offset in range(horizon):
+        d = start + timedelta(days=offset)
+        repeated = cumulative_before(d)
+        series.append({
+            "date": d.isoformat(),
+            "repeated": repeated,
+            "new": max(0, total_cards - repeated),
+        })
+
+    return {
+        "days": horizon,
+        "total_cards": total_cards,
+        "series": series,
+    }
 
 
 @router.get("/forecast")
