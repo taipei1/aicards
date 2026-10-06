@@ -422,20 +422,34 @@ Each object must have "question" and "answer" fields."""
         if siblings:
             listed = ", ".join(f'"{s}"' for s in siblings[:12])
             sibling_hint = (
-                f" Popri tom sa učí aj tieto slová — môžeš niektoré použiť "
-                f"v príkladoch: {listed}."
+                f" Volne sa učí aj tieto slová: {listed}. Môžeš ich použiť, "
+                f"LEN ak do vety prirodzene patria — nikdy ich nelep do vety "
+                f"násilím a nikdy k nim nepridávaj iný význam, než aký majú."
                 if language == "sk" else
-                f" The student is also learning these words — feel free to use "
-                f"any of them in the examples: {listed}."
+                f" The student is also learning these words: {listed}. You may use "
+                f"them ONLY where they fit the sentence naturally — never force "
+                f"them in and never give them a meaning they do not have."
             )
 
         if language == "sk":
             prompt = (
                 f'Slovenské slovo "{word}" (význam: "{back_meaning}"). '
-                f"Napíš 6 krátkych príkladov viet s týmto slovom, "
-                f"každý v inom gramatickom tvare. "
-                f"Ak je to sloveso, použi rôzne osoby (ja, ty, on/ona, my, vy, oni) "
-                f"a pridaj aj minulý čas."
+                f"Napíš 6 krátkych príkladov viet s týmto slovom.\n"
+                f"Každá veta musí byť použiteľná v reálnom živote — bežná, "
+                f"prirodzená situácia, ktorú by rodený hovoriaci naozaj vyslovil "
+                f"(doma, v práci, v obchode, v rozhovore).\n"
+                f"Každá veta musí dávať zmysel aj bez znalosti toho slova: "
+                f"žiadne náhodné slová, žiadne vykonštruované situácie, "
+                f"žiadne vety o počítačoch či technológiách, ak s nimi slovo "
+                f"nesúvisí.\n"
+                f"Používaj slovo presne v uvedenom význame — nie v prenesenom "
+                f"a nie v inom slova zmysle.\n"
+                f"Ak je to sloveso, striedaj osoby a časy (ja/ty/on/my, "
+                f"prítomný a minulý čas); ak je to podstatné meno, striedaj "
+                f"jednotné a množné číslo; ak je to prídavné meno, striedaj "
+                f"rody a stupne. Tvary musia byť správne.\n"
+                f"Každá veta nech je iná — iná situácia, iný kontext, "
+                f"nie preformulovaná tá istá myšlienka.\n"
                 f"{sibling_hint} "
                 f"Ku každému príkladu pridaj preklad do ruštiny "
                 f"a krátky názov gramatického tvaru. "
@@ -447,10 +461,21 @@ Each object must have "question" and "answer" fields."""
         else:
             prompt = (
                 f'The word "{word}" (meaning: "{back_meaning}"). '
-                f"Write 6 short example sentences with this word, "
-                f"each in a different grammatical form or tense. "
-                f"If it is a verb, use different persons (I, you, he/she, we, they) "
-                f"and include the past tense."
+                f"Write 6 short example sentences with this word.\n"
+                f"Every sentence must be usable in real life — an ordinary, "
+                f"natural situation a native speaker would actually say "
+                f"(at home, at work, in a shop, in a conversation).\n"
+                f"Every sentence must make sense on its own: no random nouns "
+                f"bolted on, no contrived or bizarre situations, no talk of "
+                f"computers or technology unless the word itself is about that.\n"
+                f"Use the word exactly in the meaning given above — not in a "
+                f"figurative or unrelated sense.\n"
+                f"If it is a verb, vary the persons (I/you/he/we/they) and "
+                f"tenses (present and past); if it is a noun, vary singular "
+                f"and plural; if it is an adjective, vary gender and degree. "
+                f"The forms must be grammatically correct.\n"
+                f"Each sentence must be genuinely different — a different "
+                f"situation and context, not the same idea reworded.\n"
                 f"{sibling_hint} "
                 f"Add a Russian translation and a short form name to each one. "
                 f'Reply in JSON format: {{"examples": ['

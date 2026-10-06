@@ -85,9 +85,17 @@ def chat_completion(
                 "temperature": temperature,
                 "max_tokens": max_tokens,
                 "stream": False,
-                # No reasoning/thinking: it burns thousands of tokens and
-                # turns a 1-second answer into a minute-long one.
+                # Reasoning MUST be off. This gateway mixes reasoning models
+                # (deepseek-v4.*) with plain ones: a reasoner happily burns the
+                # entire max_tokens budget in `reasoning_content` and returns
+                # finish_reason=length with an EMPTY `content` — the app then
+                # sees nothing and reports "LLM gateway error".
+                # `enable_thinking` is ignored by this gateway; the flags below
+                # are the ones that actually suppress it (verified against the
+                # live gateway). Plain models ignore them harmlessly.
                 "enable_thinking": False,
+                "reasoning_effort": "none",
+                "thinking": {"type": "disabled"},
             },
             timeout=timeout,
         )
