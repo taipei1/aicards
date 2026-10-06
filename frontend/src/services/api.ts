@@ -357,16 +357,43 @@ export async function getActivityStats(days: number = 105): Promise<ActivityStat
 
 export interface MaturityTrendPoint {
   date: string;
-  repeated: number;
-  new: number;
+  total: number;
+  touched: number;   // words repeated at least once (cumulative)
+  few: number;       // words repeated >= 2 times
+  many: number;      // words repeated >= 4 times
+  touched_pct: number;
+  few_pct: number;
+  many_pct: number;
 }
 
-export async function getMaturityTrend(days: number = 14): Promise<{
+export async function getMaturityTrend(days: number = 90, points: number = 15): Promise<{
   days: number;
   total_cards: number;
+  from: string;
+  to: string;
   series: MaturityTrendPoint[];
 }> {
-  const res = await api.get('/stats/maturity-trend', { params: { days } });
+  const res = await api.get('/stats/maturity-trend', { params: { days, points } });
+  return res.data;
+}
+
+export interface ForecastDay {
+  date: string;
+  normal: number;
+  reverse: number;
+  total: number;
+}
+
+export async function getForecast(days: number = 14): Promise<{
+  days: number;
+  overdue_total: number;
+  overdue_normal: number;
+  overdue_reverse: number;
+  forecast: ForecastDay[];
+  peak_day: string | null;
+  peak_total: number;
+}> {
+  const res = await api.get('/stats/forecast', { params: { days } });
   return res.data;
 }
 
@@ -396,26 +423,6 @@ export async function getMaturityStats(): Promise<{
   totals: MaturityBucket;
 }> {
   const res = await api.get('/stats/maturity');
-  return res.data;
-}
-
-export interface ForecastDay {
-  date: string;
-  normal: number;
-  reverse: number;
-  total: number;
-}
-
-export async function getForecast(days: number = 14): Promise<{
-  days: number;
-  overdue_total: number;
-  overdue_normal: number;
-  overdue_reverse: number;
-  forecast: ForecastDay[];
-  peak_day: string | null;
-  peak_total: number;
-}> {
-  const res = await api.get('/stats/forecast', { params: { days } });
   return res.data;
 }
 

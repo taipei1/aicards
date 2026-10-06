@@ -4,7 +4,7 @@ import {
   getMaturityStats, getMaturityTrend,
 } from '../services/api';
 import type { CSSProperties } from 'react';
-import type { ActivityStats, StreakStats, MaturityBucket } from '../services/api';
+import type { ActivityStats, StreakStats, MaturityBucket, MaturityTrendPoint } from '../services/api';
 
 interface DailyStats {
   date: string;
@@ -94,7 +94,8 @@ export function StatsPage() {
   const [activity, setActivity] = useState<ActivityStats | null>(null);
   const [streak, setStreak] = useState<StreakStats | null>(null);
   const [maturity, setMaturity] = useState<{ by_language: Record<string, MaturityBucket>; totals: MaturityBucket } | null>(null);
-  const [trend, setTrend] = useState<{ days: number; total_cards: number; series: { date: string; repeated: number; new: number }[] } | null>(null);
+  const [trend, setTrend] = useState<{ days: number; total_cards: number; from: string; to: string; series: MaturityTrendPoint[] } | null>(null);
+  const [barDays, setBarDays] = useState(30);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -110,7 +111,7 @@ export function StatsPage() {
         getActivityStats(365),
         getStreakStats(),
         getMaturityStats(),
-        getMaturityTrend(14),
+        getMaturityTrend(90, 15),
       ]);
       setDailyStats(daily);
       setSummaryStats(summary);
@@ -180,6 +181,12 @@ export function StatsPage() {
 
   // Trend chart scaling
   const trendSeries = trend?.series || [];
+
+  // Cards-per-day bars (repeats per day)
+  const bars = daily.slice(-barDays);
+  const barMax = Math.max(1, ...bars.map((b) => b.cards));
+  const barAvg = bars.length ? bars.reduce((s, b) => s + b.cards, 0) / bars.length : 0;
+  const barsTotal = bars.reduce((s, b) => s + b.cards, 0);
 
   return (
     <div>
@@ -251,8 +258,8 @@ export function StatsPage() {
         <div style={panel}>
           <h3 style={panelTitle}>Зрелость колоды</h3>
           <p style={hint}>
-            По фактическому числу повторений. Полоса — текущий срез, линия ниже — как менялось число
-            «повторялось хотя бы раз» за 14 дней.
+            По фактическому числу повторений. Полосы — текущий срез по колодам,
+            линии ниже — как менялась зрелость по уровням.
           </p>
           {Object.entries(maturity.by_language).map(([lang, b]) => (
             <div key={lang} style={{ marginBottom: '14px' }}>
@@ -297,20 +304,101 @@ export function StatsPage() {
           </div>
 
           {trendSeries.length > 1 && (
-            <div style={{ marginTop: '16px' }}>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                Динамика за 14 дней: всего {trend?.total_cards} слов, повторялось{' '}
-                {trendSeries[0].repeated} → <span style={{ color: 'var(--text-primary)', fontWeight: 'bold' }}>{trendSeries[trendSeries.length - 1].repeated}</span>
-                {' '}({trendSeries[trendSeries.length - 1].repeated - trendSeries[0].repeated >= 0 ? '+' : ''}
-                {trendSeries[trendSeries.length - 1].repeated - trendSeries[0].repeated})
+            <div style={{ marginTop: '18px' }}>
+              <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '2px' }}>
+                Динамика зрелости за {trend?.days} дней
               </div>
-              <TrendChart series={trendSeries} />
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                Три уровня: сколько слов из {trend?.total_cards} повторялось хотя бы раз (≥1), дважды (≥2) и 4+ раза (≥4).
+              </div>
+              <MaturityChart series={trendSeries} />
+              {(() => {
+                const last = trendSeries[trendSeries.length - 1];
+                return (
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '10px' }}>
+                    {([
+                      ['≥1 повтор', last.touched, last.touched_pct, MATURITY_COLORS.once],
+                      ['≥2 повтора', last.few, last.few_pct, MATURITY_COLORS.few],
+                      ['≥4 повторов', last.many, last.many_pct, MATURITY_COLORS.many],
+                    ] as const).map(([label, n, pct, color]) => (
+                      <div key={label} style={{
+                        flex: '1 1 120px', minWidth: '110px', border: '1px solid var(--border-light)',
+                        borderRadius: '4px', padding: '8px 10px', background: 'var(--bg-muted)',
+                        borderLeft: `4px solid ${color}`,
+                      }}>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{label}</div>
+                        <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>
+                          {pct}% <span style={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>({n})</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
-          <div style={{ marginTop: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+          <div style={{ marginTop: '14px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
             Всего повторялось хотя бы раз: {maturity.totals.total - maturity.totals.new} из {maturity.totals.total}
             {' '}({Math.round(((maturity.totals.total - maturity.totals.new) / maturity.totals.total) * 100)}%)
+          </div>
+        </div>
+      )}
+
+      {/* ───── Cards per day ───── */}
+      {daily.length > 0 && (
+        <div style={panel}>
+          <h3 style={panelTitle}>Карточек в день</h3>
+          <p style={hint}>
+            Средняя за период: {barAvg.toFixed(1)} карт/день. Всего {barsTotal} за последние {barDays} дней.
+          </p>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+            {[30, 90].map((d) => (
+              <button
+                key={d}
+                onClick={() => setBarDays(d)}
+                style={{
+                  padding: '4px 12px',
+                  fontSize: '0.8rem',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  borderRadius: '4px',
+                  minHeight: '32px',
+                  border: '2px solid var(--border-primary)',
+                  background: barDays === d ? 'var(--text-primary)' : 'var(--bg-primary)',
+                  color: barDays === d ? 'var(--bg-primary)' : 'var(--text-primary)',
+                }}
+              >
+                {d} дней
+              </button>
+            ))}
+          </div>
+          <div style={{
+            display: 'flex',
+            alignItems: 'flex-end',
+            gap: barDays > 60 ? '1px' : '3px',
+            height: '110px',
+            borderBottom: '1px solid var(--border-primary)',
+            overflow: 'hidden',
+          }}>
+            {bars.map((b) => (
+              <div
+                key={b.date}
+                title={`${b.date}: ${b.cards} карт., ${b.minutes} мин`}
+                style={{
+                  flex: '1 1 0',
+                  minWidth: '2px',
+                  height: `${Math.max(b.cards > 0 ? 3 : 0, (b.cards / barMax) * 100)}%`,
+                  background: b.cards > 0 ? 'var(--accent)' : 'transparent',
+                  borderTop: b.cards > barAvg && b.cards > 0 ? '2px solid var(--text-success)' : 'none',
+                  borderBottom: b.cards === 0 ? '2px solid var(--border-light)' : 'none',
+                }}
+              />
+            ))}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+            <span>{bars[0]?.date}</span>
+            <span>{bars[bars.length - 1]?.date}</span>
           </div>
         </div>
       )}
@@ -377,30 +465,59 @@ export function StatsPage() {
   );
 }
 
-// Inline SVG line chart: repeated words over the trend window.
-function TrendChart({ series }: { series: { date: string; repeated: number; new: number }[] }) {
-  const W = 620, H = 90, PAD = 6;
-  const vals = series.map((p) => p.repeated);
-  const min = Math.min(...vals);
-  const max = Math.max(...vals);
-  const span = Math.max(1, max - min);
-  const stepX = (W - PAD * 2) / Math.max(1, series.length - 1);
-  const y = (v: number) => H - PAD - ((v - min) / span) * (H - PAD * 2);
-  const pts = series.map((p, i) => `${PAD + i * stepX},${y(p.repeated)}`).join(' ');
-  const area = `${PAD},${H - PAD} ${pts} ${PAD + (series.length - 1) * stepX},${H - PAD}`;
+// Inline SVG multi-line chart: how many words sit at each maturity level over
+// time. Three curves share one 0..max scale so their gaps are readable.
+function MaturityChart({ series }: { series: MaturityTrendPoint[] }) {
+  const W = 620, H = 160, PADL = 34, PADR = 8, PADT = 10, PADB = 16;
+  const innerW = W - PADL - PADR;
+  const innerH = H - PADT - PADB;
+  const maxV = Math.max(1, ...series.map((p) => Math.max(p.touched, p.many)));
+  const stepX = innerW / Math.max(1, series.length - 1);
+  const x = (i: number) => PADL + i * stepX;
+  const y = (v: number) => PADT + innerH - (v / maxV) * innerH;
+
+  const line = (key: 'touched' | 'few' | 'many') =>
+    series.map((p, i) => `${x(i)},${y(p[key])}`).join(' ');
+
+  const LINES: { key: 'touched' | 'few' | 'many'; color: string; label: string }[] = [
+    { key: 'touched', color: '#7fb3d5', label: '≥1 повтор' },
+    { key: 'few', color: '#5dade2', label: '≥2 повтора' },
+    { key: 'many', color: 'var(--text-success)', label: '≥4 повторов' },
+  ];
+
+  // 3 grid lines with value labels
+  const ticks = [0, 0.5, 1].map((f) => Math.round(maxV * f));
+
   return (
     <div style={{ overflowX: 'auto' }}>
-      <svg width={W} height={H} style={{ display: 'block', minWidth: '420px' }}>
-        <polygon points={area} fill="var(--accent)" opacity={0.15} />
-        <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth={2} />
-        {series.map((p, i) => (
-          <circle key={p.date} cx={PAD + i * stepX} cy={y(p.repeated)} r={2.5} fill="var(--accent)">
-            <title>{`${p.date}: повторялось ${p.repeated} · новых ${p.new}`}</title>
-          </circle>
+      <svg width={W} height={H} style={{ display: 'block', minWidth: '440px' }}>
+        {ticks.map((t) => (
+          <g key={t}>
+            <line x1={PADL} y1={y(t)} x2={W - PADR} y2={y(t)} stroke="var(--border-light)" strokeDasharray="3 3" />
+            <text x={PADL - 4} y={y(t) + 3} fontSize={9} fill="var(--text-secondary)" textAnchor="end">{t}</text>
+          </g>
         ))}
-        <text x={PAD} y={H - 1} fontSize={9} fill="var(--text-secondary)">{series[0]?.date.slice(5)}</text>
-        <text x={W - PAD} y={H - 1} fontSize={9} fill="var(--text-secondary)" textAnchor="end">{series[series.length - 1]?.date.slice(5)}</text>
+        {LINES.map((l) => (
+          <g key={l.key}>
+            <polyline points={line(l.key)} fill="none" stroke={l.color} strokeWidth={2} />
+            {series.map((p, i) => (
+              <circle key={p.date} cx={x(i)} cy={y(p[l.key])} r={2.5} fill={l.color}>
+                <title>{`${p.date} · ${l.label}: ${p[l.key]} (${p[`${l.key}_pct` as const]}%)`}</title>
+              </circle>
+            ))}
+          </g>
+        ))}
+        <text x={PADL} y={H - 3} fontSize={9} fill="var(--text-secondary)">{series[0]?.date.slice(5)}</text>
+        <text x={W - PADR} y={H - 3} fontSize={9} fill="var(--text-secondary)" textAnchor="end">{series[series.length - 1]?.date.slice(5)}</text>
       </svg>
+      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '6px' }}>
+        {LINES.map((l) => (
+          <span key={l.key}>
+            <span style={{ display: 'inline-block', width: '16px', height: '3px', background: l.color, marginRight: '5px', verticalAlign: 'middle' }} />
+            {l.label}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

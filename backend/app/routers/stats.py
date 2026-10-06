@@ -4,7 +4,7 @@ from sqlalchemy import text
 from datetime import datetime, timezone, timedelta, date
 
 from app.database import get_db
-from app.models import User, SessionStats
+from app.models import User, SessionStats, Card
 
 router = APIRouter()
 
@@ -256,52 +256,92 @@ def get_maturity(
 
 @router.get("/maturity-trend")
 def get_maturity_trend(
-    days: int = Query(14, description="Window of the trend in days"),
+    days: int = Query(90, description="Window of the trend in days"),
+    points: int = Query(15, description="Number of sampled points (dates) in the series"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """Deck maturity over time: words already repeated at least once, per day.
+    """Deck maturity over time — several curves, not one number.
 
-    A word counts as 'repeated' on days from its first review onwards (all
-    reviews of a card are at or after the first one), so the curve shows how
-    the deck fills up. Snapshot is taken at the end of each day, oldest first.
+    Maturity is measured by how many times each word has actually been
+    repeated (review counts, not FSRS stability: stability was seeded from
+    card age on import and reaches absurd values, so a stability-based split
+    reads ~100% mastered). For each sampled date we count, over the whole
+    deck, how many words have cumulative repeats >= 1, >= 2 and >= 4 — so the
+    chart shows the deck growing from "new" to "seen" to "drilled".
+
+    Buckets are computed per (card, day) with a ceiling of 4 to keep the
+    intermediate data tiny; every word is counted at each snapshot date.
     """
-    horizon = max(1, days)
+    horizon = max(2, days)
+    npoints = max(2, min(60, points))
     today = datetime.now(timezone.utc).date()
     start = today - timedelta(days=horizon - 1)
-    from app.models import Card
 
     rows = db.execute(text("""
-        SELECT first_day, count(*)::int AS n
-        FROM (
-            SELECT c.id AS card_id, min(r.review_time::date) AS first_day
-            FROM cards c
-            JOIN users u ON u.id = c.user_id
-            JOIN reviews r ON r.card_id = c.id
-            WHERE u.username = 'default'
-            GROUP BY c.id
-        ) t
-        GROUP BY first_day
+        SELECT r.card_id, r.review_time::date AS day, count(*)::int AS n
+        FROM reviews r
+        JOIN cards c ON c.id = r.card_id
+        JOIN users u ON u.id = c.user_id
+        WHERE u.username = 'default'
+        GROUP BY r.card_id, r.review_time::date
     """)).fetchall()
 
-    def cumulative_before(day: date) -> int:
-        return sum(r.n for r in rows if r.first_day and r.first_day <= day)
+    # per card: sorted [(day, cumulative_repeats_at_that_day)] capped at 4
+    per_card: dict = {}
+    for r in rows:
+        if r.day is None:
+            continue
+        arr = per_card.setdefault(r.card_id, {})
+        arr[r.day] = arr.get(r.day, 0) + r.n
+    cards_days = [(cid, sorted(by_day.items())) for cid, by_day in per_card.items()]
 
     total_cards = db.query(Card).filter(Card.user_id == user.id).count()
 
+    def snapshot(day: date):
+        """Counts over the deck at end of `day`, capped at 1/2/4 repeats."""
+        touched = few = many = 0
+        for _cid, by_day in cards_days:
+            cum = 0
+            for d, n in by_day:
+                if d <= day:
+                    cum += n
+                else:
+                    break
+            if cum >= 1:
+                touched += 1
+            if cum >= 2:
+                few += 1
+            if cum >= 4:
+                many += 1
+        return touched, few, many
+
+    denom = max(1, total_cards)
+    step = (horizon - 1) / (npoints - 1)
     series = []
-    for offset in range(horizon):
-        d = start + timedelta(days=offset)
-        repeated = cumulative_before(d)
+    seen_dates = set()
+    for i in range(npoints):
+        d = start + timedelta(days=round(i * step))
+        if d in seen_dates:
+            continue
+        seen_dates.add(d)
+        touched, few, many = snapshot(d)
         series.append({
             "date": d.isoformat(),
-            "repeated": repeated,
-            "new": max(0, total_cards - repeated),
+            "total": total_cards,
+            "touched": touched,                      # >= 1 повтор
+            "few": few,                              # >= 2 повтора
+            "many": many,                            # >= 4 повторов
+            "touched_pct": round(touched / denom * 100, 1),
+            "few_pct": round(few / denom * 100, 1),
+            "many_pct": round(many / denom * 100, 1),
         })
 
     return {
         "days": horizon,
         "total_cards": total_cards,
+        "from": series[0]["date"] if series else start.isoformat(),
+        "to": series[-1]["date"] if series else today.isoformat(),
         "series": series,
     }
 
