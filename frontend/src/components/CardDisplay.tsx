@@ -383,17 +383,6 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit }: CardDisplayProp
         )}
       </div>
 
-      {!showBack && (
-        <div style={{
-          textAlign: 'center',
-          color: 'var(--text-secondary)',
-          fontSize: '0.85rem',
-          marginBottom: '10px',
-        }}>
-          Tap to reveal
-        </div>
-      )}
-
       {/* Typing mode */}
       <div style={{ marginBottom: '10px' }}>
         {!typingMode ? (

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Query
+from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime, timezone, timedelta, date
@@ -63,16 +64,31 @@ def get_daily_stats(
 @router.get("/summary")
 def get_summary(
     days: int = 30,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """Get summary for last N days."""
-    start_date = (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
+    """Summary for a period.
 
-    stats = db.query(SessionStats).filter(
-        SessionStats.user_id == user.id,
-        SessionStats.session_date >= start_date
-    ).all()
+    Default is "the last N days", but an explicit inclusive `start`/`end`
+    (ISO dates) wins when both are given — the UI needs a Monday→Sunday week
+    and the matching window of the previous week.
+    """
+    if start and end:
+        stats = db.query(SessionStats).filter(
+            SessionStats.user_id == user.id,
+            SessionStats.session_date >= start,
+            SessionStats.session_date <= end
+        ).all()
+        period_days = (date.fromisoformat(end) - date.fromisoformat(start)).days + 1
+    else:
+        start_date = (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
+        stats = db.query(SessionStats).filter(
+            SessionStats.user_id == user.id,
+            SessionStats.session_date >= start_date
+        ).all()
+        period_days = days
 
     total_seconds = sum(s.seconds_spent or 0 for s in stats)
     by_module = {}
@@ -89,10 +105,12 @@ def get_summary(
     active_days = len({s.session_date for s in stats})
 
     return {
-        "period_days": days,
+        "period_days": period_days,
+        "from": start,
+        "to": end,
         "total_minutes": _minutes(total_seconds),
         "total_seconds": total_seconds,
-        "avg_per_day": _minutes(total_seconds / days) if days > 0 else 0,
+        "avg_per_day": _minutes(total_seconds / period_days) if period_days > 0 else 0,
         "active_days": active_days,
         "total_cards": sum(s.card_count or 0 for s in stats),
         "by_module": by_module,

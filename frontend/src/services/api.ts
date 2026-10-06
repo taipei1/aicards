@@ -324,8 +324,10 @@ export async function getDailyStats(date?: string) {
   return res.data;
 }
 
-export async function getSummaryStats(days: number = 30) {
-  const res = await api.get('/stats/summary', { params: { days } });
+export async function getSummaryStats(days: number = 30, range?: { start: string; end: string }) {
+  const res = await api.get('/stats/summary', {
+    params: range ? { start: range.start, end: range.end } : { days },
+  });
   return res.data;
 }
 

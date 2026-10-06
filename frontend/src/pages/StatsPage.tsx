@@ -105,9 +105,15 @@ export function StatsPage() {
   const loadStats = async () => {
     setLoading(true);
     try {
+      const now = new Date();
+      const mon = mondayOf(now);
+      const sun = new Date(mon);
+      sun.setUTCDate(mon.getUTCDate() + 6);
+      const monIso = mon.toISOString().slice(0, 10);
+      const sunIso = sun.toISOString().slice(0, 10);
       const [daily, summary, act, str, mat, tr] = await Promise.all([
         getDailyStats(),
-        getSummaryStats(7),
+        getSummaryStats(7, { start: monIso, end: sunIso }),
         getActivityStats(365),
         getStreakStats(),
         getMaturityStats(),
@@ -188,23 +194,99 @@ export function StatsPage() {
   const barAvg = bars.length ? bars.reduce((s, b) => s + b.cards, 0) / bars.length : 0;
   const barsTotal = bars.reduce((s, b) => s + b.cards, 0);
 
+  // ── Week-to-date vs the same span of last week (Mon → today's weekday) ──
+  // Compared on the review-derived daily numbers so both sides come from the
+  // same source (session_stats card counts can lag behind reviews).
+  const todayIdx = (new Date(today + 'T00:00:00Z').getUTCDay() + 6) % 7; // Mon = 0
+  const prevMonday = new Date(monday);
+  prevMonday.setUTCDate(monday.getUTCDate() - 7);
+  const prevMondayIso = prevMonday.toISOString().slice(0, 10);
+  const prevCutoff = new Date(prevMonday);
+  prevCutoff.setUTCDate(prevMonday.getUTCDate() + todayIdx);
+  const prevCutoffIso = prevCutoff.toISOString().slice(0, 10);
+
+  const thisWeekSoFar = daily.filter((d) => d.date >= mondayIso && d.date <= today);
+  const prevWeekSoFar = daily.filter((d) => d.date >= prevMondayIso && d.date <= prevCutoffIso);
+  const thisWeekCards = thisWeekSoFar.reduce((s, d) => s + d.cards, 0);
+  const prevWeekCards = prevWeekSoFar.reduce((s, d) => s + d.cards, 0);
+  const thisWeekSecs = thisWeekSoFar.reduce((s, d) => s + (d.seconds || 0), 0);
+  const prevWeekSecs = prevWeekSoFar.reduce((s, d) => s + (d.seconds || 0), 0);
+  const cardsDelta = thisWeekCards - prevWeekCards;
+  const cardsDeltaPct = prevWeekCards > 0 ? Math.round((cardsDelta / prevWeekCards) * 100) : null;
+  const weekLabel = `Пн ${dayFmt(mondayIso)} – Вс ${dayFmt(sundayIso)}`;
+
   return (
     <div>
-      <h2 style={{ marginBottom: '20px', color: 'var(--text-primary)' }}>Statistics</h2>
+      {/* Header with Refresh in the top-right */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '20px' }}>
+        <h2 style={{ margin: 0, color: 'var(--text-primary)' }}>Statistics</h2>
+        <button onClick={loadStats} style={{
+          border: '2px solid var(--border-primary)',
+          background: 'var(--bg-primary)',
+          color: 'var(--text-primary)',
+          padding: '8px 16px',
+          fontSize: '0.9rem',
+          cursor: 'pointer',
+          borderRadius: '4px',
+          fontWeight: 'bold',
+          minHeight: '44px',
+          whiteSpace: 'nowrap',
+        }}>
+          Refresh
+        </button>
+      </div>
 
-      {/* ───── KPI tiles (numbers live only here) ───── */}
+      {/* ───── Итог за неделю (top) ───── */}
+      <div style={panel}>
+        <h3 style={panelTitle}>Итог за неделю</h3>
+        <p style={hint}>{weekLabel}</p>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {tile('Карточек', String(thisWeekCards), weekLabel)}
+          {tile('Время', humanDuration(weekSeconds), `${weekDays.length} дней в неделе`)}
+          {cardsDeltaPct !== null && tile(
+            'К прошлой неделе',
+            `${cardsDelta >= 0 ? '+' : ''}${cardsDeltaPct}%`,
+            `сейчас ${thisWeekCards} · на этот день прошлой недели ${prevWeekCards}`,
+            cardsDelta >= 0 ? 'var(--text-success)' : 'var(--text-danger)',
+          )}
+        </div>
+        <div style={{ marginTop: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+          На этот день прошлой недели: {prevWeekCards} карт. · {humanDuration(prevWeekSecs)}
+          {' '}
+          <span style={{
+            color: cardsDelta >= 0 ? 'var(--text-success)' : 'var(--text-danger)',
+            fontWeight: 'bold',
+          }}>
+            {cardsDelta >= 0 ? 'опережение' : 'отставание'} на {Math.abs(cardsDelta)} карт.
+          </span>
+        </div>
+      </div>
+
+      {/* ───── Итог за день (top) ───── */}
+      {dailyStats && (
+        <div style={panel}>
+          <h3 style={panelTitle}>Итог за день</h3>
+          <p style={hint}>{dailyStats.date}</p>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {tile('Карточек', String(dailyStats.card_count), `${dailyStats.total_minutes} мин`)}
+            {tile('Время', `${dailyStats.total_minutes} мин`, `${dailyStats.total_seconds} сек`)}
+            {Object.entries(dailyStats.by_category).map(([cat, mins]) => (
+              <Fragment key={cat}>
+                {tile(cat === 'sk' ? 'Slovak' : cat === 'en' ? 'English' : cat, `${mins} мин`,
+                  `${dailyStats.cards_by_category[cat] ?? 0} карточек`)}
+              </Fragment>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ───── KPI tiles: only values NOT shown in the day/week panels above ───── */}
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
         {streak && tile(
           'Стрик',
           String(streak.current_streak),
           `лучший: ${streak.best_streak} · всего дней: ${streak.total_active_days}`,
           streak.current_streak > 0 ? 'var(--text-success)' : 'var(--text-danger)',
-        )}
-        {dailyStats && tile('Сегодня карточек', String(dailyStats.card_count), `${dailyStats.total_minutes} мин`)}
-        {summaryStats && tile(
-          'Итог за неделю',
-          String(summaryStats.total_cards),
-          `Пн ${dayFmt(mondayIso)} – Вс ${dayFmt(sundayIso)} · ${humanDuration(weekSeconds)}`,
         )}
         {activity && tile(
           'Дней >2ч',
@@ -403,64 +485,29 @@ export function StatsPage() {
         </div>
       )}
 
-      {/* ───── Period summary (no numbers repeated from the tiles) ───── */}
-      {summaryStats && (
+      {/* ───── Per-deck time breakdown (week) ───── */}
+      {summaryStats && Object.keys(summaryStats.by_category).length > 0 && (
         <div style={panel}>
-          <h3 style={panelTitle}>Итого за неделю (Пн–Вс)</h3>
-          <p style={hint}>
-            {dayFmt(mondayIso)} – {dayFmt(sundayIso)} · {weekDays.length} дней в неделе
-          </p>
-          {Object.keys(summaryStats.by_category).length > 0 && (
-            <div>
-              <div style={{ color: 'var(--text-secondary)', marginBottom: '6px', fontSize: '0.85rem' }}>По колодам (время):</div>
-              {Object.entries(summaryStats.by_category)
-                .sort(([, a], [, b]) => b - a)
-                .map(([cat, mins]) => {
-                  const max = Math.max(...Object.values(summaryStats.by_category));
-                  return (
-                    <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                      <span style={{ width: '60px', fontSize: '0.8rem', color: 'var(--text-primary)', textTransform: 'capitalize' }}>{cat}</span>
-                      <div style={{ flex: 1, height: '14px', background: 'var(--bg-muted)', borderRadius: '2px', overflow: 'hidden' }}>
-                        <div style={{ width: `${(mins / max) * 100}%`, height: '100%', background: 'var(--accent)' }} />
-                      </div>
-                      <span style={{ width: '70px', textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{mins} мин</span>
+          <h3 style={panelTitle}>Время по колодам (за неделю)</h3>
+          <p style={hint}>{weekLabel} · {weekDays.length} дней в неделе</p>
+          <div>
+            {Object.entries(summaryStats.by_category)
+              .sort(([, a], [, b]) => b - a)
+              .map(([cat, mins]) => {
+                const max = Math.max(...Object.values(summaryStats.by_category));
+                return (
+                  <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                    <span style={{ width: '60px', fontSize: '0.8rem', color: 'var(--text-primary)', textTransform: 'capitalize' }}>{cat}</span>
+                    <div style={{ flex: 1, height: '14px', background: 'var(--bg-muted)', borderRadius: '2px', overflow: 'hidden' }}>
+                      <div style={{ width: `${(mins / max) * 100}%`, height: '100%', background: 'var(--accent)' }} />
                     </div>
-                  );
-                })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ───── Today: time breakdown only (card counts are in the tiles above) ───── */}
-      {dailyStats && (
-        <div style={panel}>
-          <h3 style={panelTitle}>Сегодня ({dailyStats.date})</h3>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {tile('Время', `${dailyStats.total_minutes} мин`, `${dailyStats.total_seconds} сек`)}
-            {Object.entries(dailyStats.by_category).map(([cat, mins]) => (
-              <Fragment key={cat}>
-                {tile(cat === 'sk' ? 'Slovak' : cat === 'en' ? 'English' : cat, `${mins} мин`,
-                  `${dailyStats.cards_by_category[cat] ?? 0} карточек`)}
-              </Fragment>
-            ))}
+                    <span style={{ width: '70px', textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{mins} мин</span>
+                  </div>
+                );
+              })}
           </div>
         </div>
       )}
-
-      <button onClick={loadStats} style={{
-        border: '2px solid var(--border-primary)',
-        background: 'var(--bg-primary)',
-        color: 'var(--text-primary)',
-        padding: '8px 16px',
-        fontSize: '0.9rem',
-        cursor: 'pointer',
-        borderRadius: '4px',
-        fontWeight: 'bold',
-        minHeight: '44px',
-      }}>
-        Refresh
-      </button>
     </div>
   );
 }
@@ -489,8 +536,8 @@ function MaturityChart({ series }: { series: MaturityTrendPoint[] }) {
   const ticks = [0, 0.5, 1].map((f) => Math.round(maxV * f));
 
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <svg width={W} height={H} style={{ display: 'block', minWidth: '440px' }}>
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="xMidYMid meet" style={{ display: 'block', maxWidth: `${W}px` }}>
         {ticks.map((t) => (
           <g key={t}>
             <line x1={PADL} y1={y(t)} x2={W - PADR} y2={y(t)} stroke="var(--border-light)" strokeDasharray="3 3" />

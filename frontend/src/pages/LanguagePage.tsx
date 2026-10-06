@@ -1,17 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   getCardsDue, getCardsByTag, getAllTags, getDueCounts,
-  importCards, deleteCard, logReview, logReverseReview, updateCard, createCard,
+  deleteCard, logReview, logReverseReview, updateCard,
 } from '../services/api';
 import { CardDisplay } from '../components/CardDisplay';
 import type { Card, QueueItem } from '../types';
-import { select, input, label, overlay, modal, btnPrimary, btn, textarea, btnSmall } from '../styles/theme';
+import { select, input, label, overlay, modal, btnPrimary, btn } from '../styles/theme';
 
 interface Props {
   mode: 'normal' | 'emergency';
+  onNavigate?: (page: string) => void;
 }
 
-export function LanguagePage({ mode }: Props) {
+export function LanguagePage({ mode, onNavigate }: Props) {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [language, setLanguage] = useState('en');
@@ -19,23 +20,11 @@ export function LanguagePage({ mode }: Props) {
   const [selectedTag, setSelectedTag] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Import form
-  const [showImport, setShowImport] = useState(false);
-  const [importResult, setImportResult] = useState('');
-  const [importFront, setImportFront] = useState('');
-  const [importBack, setImportBack] = useState('');
-  const [importHint, setImportHint] = useState('');
-  const [importTags, setImportTags] = useState('');
-
   // Edit modal
   const [editingItem, setEditingItem] = useState<QueueItem | null>(null);
   const [editBack, setEditBack] = useState('');
   const [editHint, setEditHint] = useState('');
   const [editTags, setEditTags] = useState('');
-
-  // CSV import
-  const [csvText, setCsvText] = useState('');
-  const [csvResult, setCsvResult] = useState('');
 
   // Stats
   const [sessionStats, setSessionStats] = useState({ total: 0, again: 0, hard: 0, good: 0, easy: 0, reverse: 0 });
@@ -195,42 +184,6 @@ export function LanguagePage({ mode }: Props) {
     }
   };
 
-  const handleSingleImport = async () => {
-    if (!importFront.trim() || !importBack.trim()) return;
-    try {
-      const parsedTags = [...new Set(
-        (importTags.match(/#(\w+)/g) || []).map(t => t.slice(1).toLowerCase())
-      )];
-      await createCard({
-        front: importFront.trim(),
-        back: importBack.trim(),
-        hint: importHint.trim() || undefined,
-        tags: parsedTags,
-        language,
-      });
-      setImportFront('');
-      setImportBack('');
-      setImportHint('');
-      setImportTags('');
-      setImportResult('Card added!');
-      await loadItems();
-    } catch (err: any) {
-      setImportResult(err.response?.data?.detail || 'Failed to add card');
-    }
-  };
-
-  const handleCsvImport = async () => {
-    if (!csvText.trim()) return;
-    try {
-      const result = await importCards({ csv_content: csvText, language });
-      setCsvResult(`Imported: ${result.imported} | Duplicates: ${result.duplicates}`);
-      setCsvText('');
-      await loadItems();
-    } catch (err) {
-      setCsvResult('Import failed');
-    }
-  };
-
   return (
     <div>
       <h2 style={{ marginBottom: '16px', color: 'var(--text-primary)' }}>
@@ -257,19 +210,15 @@ export function LanguagePage({ mode }: Props) {
           Refresh
         </button>
 
-        <button onClick={() => setShowImport(!showImport)} style={btn}>
-          {showImport ? 'Hide Import' : mode === 'emergency' ? '+ Add Word' : 'Import'}
-        </button>
-
         {dueCount !== null && (
           <span
             title={`Due: ${dueCount.normal} normal · ${dueCount.reverse} reverse`}
             style={{
-              color: 'var(--text-secondary)',
+              ...btn,
+              cursor: 'default',
+              color: dueCount.total > 0 ? 'var(--text-danger)' : 'var(--text-secondary)',
+              borderColor: dueCount.total > 0 ? 'var(--text-danger)' : 'var(--border-primary)',
               fontSize: '0.9rem',
-              padding: '2px 8px',
-              border: '1px solid var(--border-light)',
-              borderRadius: '4px',
               whiteSpace: 'nowrap',
             }}
           >
@@ -290,66 +239,6 @@ export function LanguagePage({ mode }: Props) {
           </span>
         )}
       </div>
-
-      {/* Import / Add form */}
-      {showImport && (
-        <div style={{
-          marginBottom: '16px',
-          border: '2px solid var(--border-primary)',
-          padding: '12px',
-          borderRadius: '4px',
-          background: 'var(--bg-primary)',
-        }}>
-          <h3 style={{ marginBottom: '8px', color: 'var(--text-primary)', fontSize: '1rem' }}>Add Single Card</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <input
-              value={importFront}
-              onChange={e => setImportFront(e.target.value)}
-              placeholder="Word (target language)"
-              style={input}
-            />
-            <input
-              value={importBack}
-              onChange={e => setImportBack(e.target.value)}
-              placeholder="Translation (Russian)"
-              style={input}
-            />
-            <input
-              value={importHint}
-              onChange={e => setImportHint(e.target.value)}
-              placeholder="Hint (optional)"
-              style={input}
-            />
-            <input
-              value={importTags}
-              onChange={e => setImportTags(e.target.value)}
-              placeholder="Tags: #tag1 #tag2 (optional)"
-              style={input}
-            />
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button onClick={handleSingleImport} style={btnPrimary}>Add Card</button>
-              {importResult && <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{importResult}</span>}
-            </div>
-          </div>
-
-          <hr style={{ margin: '16px 0', border: 'none', borderTop: '1px solid var(--border-light)' }} />
-
-          <h3 style={{ marginBottom: '8px', color: 'var(--text-primary)', fontSize: '1rem' }}>Bulk CSV Import</h3>
-          <div style={{ marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-            Format: front,back,hint,#tag1 #tag2
-          </div>
-          <textarea
-            value={csvText}
-            onChange={e => setCsvText(e.target.value)}
-            placeholder={"word,translation,hint,#tag1 #tag2\nexample,пример,this is an example,#vocabulary #english"}
-            style={textarea}
-          />
-          <div style={{ marginTop: '8px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <button onClick={handleCsvImport} style={btnPrimary}>Import CSV</button>
-            {csvResult && <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{csvResult}</span>}
-          </div>
-        </div>
-      )}
 
       {/* Session info */}
       <div style={{
@@ -388,8 +277,8 @@ export function LanguagePage({ mode }: Props) {
         <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
           <p>{mode === 'emergency' ? 'Select a tag to start' : 'No cards due for review'}</p>
           {mode === 'normal' && (
-            <button onClick={() => setShowImport(true)} style={{ ...btnPrimary, marginTop: '12px' }}>
-              Import Cards
+            <button onClick={() => onNavigate?.('add-word')} style={{ ...btnPrimary, marginTop: '12px' }}>
+              Go to Add Word
             </button>
           )}
         </div>

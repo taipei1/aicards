@@ -81,7 +81,7 @@ export default function App() {
     { key: 'words', label: 'All Words' },
     { key: 'obsidian', label: 'Obsidian' },
     { key: 'stats', label: 'Stats' },
-    { key: 'settings', label: '⚙️ Settings' },
+    { key: 'settings', label: 'Settings' },
   ];
 
   if (!authChecked) {
@@ -101,7 +101,14 @@ export default function App() {
   }
 
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', maxWidth: '960px', margin: '0 auto', padding: '12px' }}>
+    <div style={{
+      fontFamily: 'system-ui, sans-serif',
+      maxWidth: '960px',
+      margin: '0 auto',
+      padding: '12px',
+      // Room to scroll past the last row of buttons on phones (safe-area aware).
+      paddingBottom: 'calc(56px + env(safe-area-inset-bottom, 0px))',
+    }}>
       {/* Header */}
       <div style={{
         display: 'flex',
@@ -186,8 +193,8 @@ export default function App() {
       {/* Page content — every visited page stays mounted; only visibility changes */}
       {[...visited].map((p) => (
         <div key={p} style={{ display: currentPage === p ? 'block' : 'none' }}>
-          {p === 'language' && <LanguagePage mode="normal" />}
-          {p === 'emergency' && <LanguagePage mode="emergency" />}
+          {p === 'language' && <LanguagePage mode="normal" onNavigate={(np) => setCurrentPage(np as Page)} />}
+          {p === 'emergency' && <LanguagePage mode="emergency" onNavigate={(np) => setCurrentPage(np as Page)} />}
           {p === 'add-word' && <AddWordPage />}
           {p === 'sentences' && <SentencePage onNavigate={(np) => setCurrentPage(np as Page)} />}
           {p === 'words' && <WordListPage />}
