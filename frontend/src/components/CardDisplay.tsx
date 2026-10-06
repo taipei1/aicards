@@ -457,7 +457,7 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit }: CardDisplayProp
         <button
           onClick={toggleMore}
           title="Toggle with M"
-          style={{ ...btnGrade, width: '100%' }}
+          style={{ ...btnGrade, width: '100%', fontSize: '1.05rem', minHeight: '52px' }}
         >
           {showExamples ? 'Less' : 'More'}
         </button>
@@ -466,19 +466,19 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit }: CardDisplayProp
             marginTop: '8px',
             border: '1px solid var(--border-light)',
             borderRadius: '4px',
-            padding: '10px',
+            padding: '12px',
             background: 'var(--bg-muted)',
             display: 'flex',
             flexDirection: 'column',
             gap: '10px',
           }}>
             {examplesLoading && (
-              <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textAlign: 'center' }}>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '1.05rem', textAlign: 'center' }}>
                 Generating examples…
               </div>
             )}
             {examplesError && !examplesLoading && (
-              <div style={{ color: 'var(--text-danger)', fontSize: '0.85rem', textAlign: 'center' }}>
+              <div style={{ color: 'var(--text-danger)', fontSize: '1.05rem', textAlign: 'center' }}>
                 {examplesError}
               </div>
             )}
@@ -491,43 +491,43 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit }: CardDisplayProp
                   <span
                     onClick={() => manualSpeak(ex.sentence_in_target, false)}
                     title="Озвучить"
-                    style={{ cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.85rem', flexShrink: 0 }}
+                    style={{ cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '1.05rem', flexShrink: 0 }}
                   >
                     🔊
                   </span>
-                  <div style={{ fontSize: '0.95rem', color: 'var(--text-primary)', lineHeight: '1.45' }}>
+                  <div style={{ fontSize: '1.15rem', color: 'var(--text-primary)', lineHeight: '1.45' }}>
                     {ex.sentence_in_target}
                   </div>
                 </div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px', paddingLeft: '24px' }}>
+                <div style={{ fontSize: '1.05rem', color: 'var(--text-secondary)', marginTop: '2px', paddingLeft: '26px' }}>
                   {ex.translation_in_russian}
                   {ex.form && (
-                    <span style={{ ...tagStyle, marginLeft: '6px', fontSize: '0.65rem' }}>{ex.form}</span>
+                    <span style={{ ...tagStyle, marginLeft: '6px', fontSize: '0.8rem' }}>{ex.form}</span>
                   )}
                 </div>
               </div>
             ))}
             {notesLoading && !examplesNotes && examplesSynonyms.length === 0 && (
-              <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textAlign: 'center' }}>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '1.05rem', textAlign: 'center' }}>
                 Loading notes…
               </div>
             )}
             {notesError && !notesLoading && (
-              <div style={{ color: 'var(--text-danger)', fontSize: '0.85rem', textAlign: 'center' }}>
+              <div style={{ color: 'var(--text-danger)', fontSize: '1.05rem', textAlign: 'center' }}>
                 {notesError}
               </div>
             )}
             {!notesLoading && examplesNotes && (
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                <div style={{ fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '2px' }}>
+              <div style={{ fontSize: '1.05rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                <div style={{ fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '2px', fontSize: '1.15rem' }}>
                   Usage notes
                 </div>
                 <MarkdownText text={examplesNotes} />
               </div>
             )}
             {!notesLoading && examplesSynonyms.length > 0 && (
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                <div style={{ fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '2px' }}>
+              <div style={{ fontSize: '1.05rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                <div style={{ fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '2px', fontSize: '1.15rem' }}>
                   Similar words
                 </div>
                 {examplesSynonyms.map((s, i) => (
@@ -539,7 +539,7 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit }: CardDisplayProp
               </div>
             )}
             {!examplesLoading && !notesLoading && ((examples || examplesError) || (examplesNotes || examplesSynonyms.length > 0 || notesError)) && (
-              <button onClick={() => loadMore(true)} style={{ ...btnGrade, fontSize: '0.8rem', minHeight: '36px' }}>
+              <button onClick={() => loadMore(true)} style={{ ...btnGrade, fontSize: '1rem', minHeight: '44px' }}>
                 ↻ Regenerate
               </button>
             )}
