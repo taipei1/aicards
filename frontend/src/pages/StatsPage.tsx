@@ -1,7 +1,7 @@
 import { Fragment, useState, useEffect } from 'react';
 import {
   getDailyStats, getSummaryStats, getActivityStats, getStreakStats,
-  getMaturityStats, getMaturityTrend, getForecast,
+  getMaturityStats, getMaturityTrend,
 } from '../services/api';
 import type { CSSProperties } from 'react';
 import type { ActivityStats, StreakStats, MaturityBucket } from '../services/api';
@@ -95,7 +95,6 @@ export function StatsPage() {
   const [streak, setStreak] = useState<StreakStats | null>(null);
   const [maturity, setMaturity] = useState<{ by_language: Record<string, MaturityBucket>; totals: MaturityBucket } | null>(null);
   const [trend, setTrend] = useState<{ days: number; total_cards: number; series: { date: string; repeated: number; new: number }[] } | null>(null);
-  const [forecast, setForecast] = useState<Awaited<ReturnType<typeof getForecast>> | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -105,14 +104,13 @@ export function StatsPage() {
   const loadStats = async () => {
     setLoading(true);
     try {
-      const [daily, summary, act, str, mat, tr, fc] = await Promise.all([
+      const [daily, summary, act, str, mat, tr] = await Promise.all([
         getDailyStats(),
         getSummaryStats(7),
         getActivityStats(365),
         getStreakStats(),
         getMaturityStats(),
         getMaturityTrend(14),
-        getForecast(14),
       ]);
       setDailyStats(daily);
       setSummaryStats(summary);
@@ -120,7 +118,6 @@ export function StatsPage() {
       setStreak(str);
       setMaturity(mat);
       setTrend(tr);
-      setForecast(fc);
     } catch (err) {
       console.error('Failed to load stats:', err);
     }
@@ -181,9 +178,7 @@ export function StatsPage() {
   const weekSeconds = weekDays.reduce((s, d) => s + (d.seconds || 0), 0);
   const weekCards = weekDays.reduce((s, d) => s + d.cards, 0);
 
-  // Forecast bars
-  const fcMax = Math.max(1, ...(forecast?.forecast || []).map((f) => f.total));
-
+  // Trend chart scaling
   const trendSeries = trend?.series || [];
 
   return (
@@ -320,57 +315,12 @@ export function StatsPage() {
         </div>
       )}
 
-      {/* ───── Forecast ───── */}
-      {forecast && (
-        <div style={panel}>
-          <h3 style={panelTitle}>Ближайшая нагрузка</h3>
-          <p style={hint}>
-            Сколько слов «пора повторять» в каждый день. Считаются только уже повторявшиеся слова —
-            у новых слов нет даты повторения.
-          </p>
-          {forecast.overdue_total > 0 && (
-            <div style={{
-              padding: '8px 10px',
-              marginBottom: '12px',
-              background: 'var(--bg-danger)',
-              color: 'var(--text-danger)',
-              borderRadius: '4px',
-              fontSize: '0.85rem',
-              fontWeight: 'bold',
-            }}>
-              🔁 Уже просрочено: {forecast.overdue_total} (прямых {forecast.overdue_normal}, обратных {forecast.overdue_reverse})
-            </div>
-          )}
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', height: '90px', borderBottom: '1px solid var(--border-primary)' }}>
-            {forecast.forecast.map((f) => (
-              <div
-                key={f.date}
-                title={`${f.date}: ${f.total} (прямых ${f.normal}, обратных ${f.reverse})`}
-                style={{ flex: '1 1 0', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }}
-              >
-                <div style={{ height: `${(f.reverse / fcMax) * 100}%`, background: 'var(--text-danger)', minHeight: f.reverse > 0 ? '2px' : 0 }} />
-                <div style={{ height: `${(f.normal / fcMax) * 100}%`, background: 'var(--accent)', minHeight: f.normal > 0 ? '2px' : 0 }} />
-              </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            <span>сегодня</span>
-            <span>через {forecast.days} дн.</span>
-          </div>
-          <div style={{ display: 'flex', gap: '12px', fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '8px' }}>
-            <span><span style={{ display: 'inline-block', width: '10px', height: '10px', background: 'var(--accent)', marginRight: '4px' }} />прямые</span>
-            <span><span style={{ display: 'inline-block', width: '10px', height: '10px', background: 'var(--text-danger)', marginRight: '4px' }} />обратные</span>
-            {forecast.peak_total > 0 && <span>пик: {forecast.peak_total} слов {forecast.peak_day}</span>}
-          </div>
-        </div>
-      )}
-
       {/* ───── Period summary (no numbers repeated from the tiles) ───── */}
       {summaryStats && (
         <div style={panel}>
           <h3 style={panelTitle}>Итого за неделю (Пн–Вс)</h3>
           <p style={hint}>
-            {dayFmt(mondayIso)} – {dayFmt(sundayIso)} · {weekDays.length} дней в неделе · {weekCards} карточек
+            {dayFmt(mondayIso)} – {dayFmt(sundayIso)} · {weekDays.length} дней в неделе
           </p>
           {Object.keys(summaryStats.by_category).length > 0 && (
             <div>
@@ -394,17 +344,16 @@ export function StatsPage() {
         </div>
       )}
 
-      {/* ───── Today ───── */}
+      {/* ───── Today: time breakdown only (card counts are in the tiles above) ───── */}
       {dailyStats && (
         <div style={panel}>
           <h3 style={panelTitle}>Сегодня ({dailyStats.date})</h3>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {tile('Карточек', String(dailyStats.card_count))}
             {tile('Время', `${dailyStats.total_minutes} мин`, `${dailyStats.total_seconds} сек`)}
-            {Object.entries(dailyStats.cards_by_category).map(([cat, n]) => (
+            {Object.entries(dailyStats.by_category).map(([cat, mins]) => (
               <Fragment key={cat}>
-                {tile(cat === 'sk' ? 'Slovak' : cat === 'en' ? 'English' : cat, String(n),
-                  `${dailyStats.by_category[cat] ?? 0} мин`)}
+                {tile(cat === 'sk' ? 'Slovak' : cat === 'en' ? 'English' : cat, `${mins} мин`,
+                  `${dailyStats.cards_by_category[cat] ?? 0} карточек`)}
               </Fragment>
             ))}
           </div>
