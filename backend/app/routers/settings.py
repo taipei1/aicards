@@ -36,6 +36,43 @@ class LLMSettingsUpdate(BaseModel):
     embedding_model: Optional[str] = None
 
 
+class AudioPrefs(BaseModel):
+    """UI preferences shared by every device (single-user app)."""
+    audio_enabled: bool = True
+    audio_volume: float = 0.7
+
+
+_AUDIO_ENABLED_KEY = "audio.enabled"
+_AUDIO_VOLUME_KEY = "audio.volume"
+# 1.0 = the volume the app used before this setting existed, so nobody's sound
+# gets quietly halved by upgrading to a build that has the slider.
+_DEFAULT_VOLUME = 1.0
+
+
+def _read_audio_prefs(db: Session) -> AudioPrefs:
+    enabled_raw = llm_gateway.get_setting(db, _AUDIO_ENABLED_KEY)
+    volume_raw = llm_gateway.get_setting(db, _AUDIO_VOLUME_KEY)
+    enabled = True if enabled_raw in (None, "") else enabled_raw.lower() in ("1", "true", "yes", "on")
+    try:
+        volume = float(volume_raw) if volume_raw not in (None, "") else _DEFAULT_VOLUME
+    except ValueError:
+        volume = _DEFAULT_VOLUME
+    return AudioPrefs(audio_enabled=enabled, audio_volume=min(1.0, max(0.0, volume)))
+
+
+@router.get("/prefs", response_model=AudioPrefs)
+def get_prefs(db: Session = Depends(get_db)):
+    return _read_audio_prefs(db)
+
+
+@router.put("/prefs", response_model=AudioPrefs)
+def update_prefs(payload: AudioPrefs, db: Session = Depends(get_db)):
+    llm_gateway.set_setting(db, _AUDIO_ENABLED_KEY, "true" if payload.audio_enabled else "false")
+    volume = min(1.0, max(0.0, payload.audio_volume))
+    llm_gateway.set_setting(db, _AUDIO_VOLUME_KEY, f"{volume:.2f}")
+    return _read_audio_prefs(db)
+
+
 def _public_settings(db: Session) -> LLMSettingsResponse:
     cfg = llm_gateway.resolve_config(db)
     key = cfg["api_key"]

@@ -8,6 +8,7 @@ import { SentencePage } from './pages/SentencePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LoginPage } from './pages/LoginPage';
 import { getAuthStatus, logout, UNAUTHORIZED_EVENT } from './services/api';
+import { initTtsPrefs } from './utils/tts';
 
 type Page = 'language' | 'obsidian' | 'stats' | 'words' | 'emergency' | 'add-word' | 'sentences' | 'settings';
 
@@ -27,6 +28,9 @@ export default function App() {
     const isDark = saved ? saved === 'dark' : prefersDark;
     setDarkMode(isDark);
     document.documentElement.classList.toggle('dark-mode', isDark);
+    // Pull the shared audio prefs once per load, so the very first card of a
+    // session already plays at the saved volume / stays silent if muted.
+    initTtsPrefs();
   }, []);
 
   // Check existing token on load — password is only asked when there is none
@@ -193,8 +197,12 @@ export default function App() {
       {/* Page content — every visited page stays mounted; only visibility changes */}
       {[...visited].map((p) => (
         <div key={p} style={{ display: currentPage === p ? 'block' : 'none' }}>
-          {p === 'language' && <LanguagePage mode="normal" onNavigate={(np) => setCurrentPage(np as Page)} />}
-          {p === 'emergency' && <LanguagePage mode="emergency" onNavigate={(np) => setCurrentPage(np as Page)} />}
+          {p === 'language' && (
+            <LanguagePage mode="normal" isVisible={currentPage === 'language'} onNavigate={(np) => setCurrentPage(np as Page)} />
+          )}
+          {p === 'emergency' && (
+            <LanguagePage mode="emergency" isVisible={currentPage === 'emergency'} onNavigate={(np) => setCurrentPage(np as Page)} />
+          )}
           {p === 'add-word' && <AddWordPage />}
           {p === 'sentences' && <SentencePage onNavigate={(np) => setCurrentPage(np as Page)} />}
           {p === 'words' && <WordListPage />}

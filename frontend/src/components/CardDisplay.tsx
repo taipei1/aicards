@@ -20,6 +20,10 @@ interface CardDisplayProps {
   onGrade: (rating: 1 | 2 | 3 | 4, timeSpent: number) => void;
   onDelete: () => void;
   onEdit?: (item: QueueItem) => void;
+  /** False while this page is hidden. All pages stay mounted (see App.tsx), so
+   *  without this flag EVERY mounted deck answers the same global key press —
+   *  one "D" deleted cards in two decks at once. */
+  isVisible?: boolean;
 }
 
 function normalizeWord(s: string): string {
@@ -73,7 +77,7 @@ function MarkdownText({ text }: { text: string }) {
   return <>{blocks}</>;
 }
 
-export function CardDisplay({ item, onGrade, onDelete, onEdit }: CardDisplayProps) {
+export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true }: CardDisplayProps) {
   const [showBack, setShowBack] = useState(false);
   const [timer, setTimer] = useState(30);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -102,11 +106,20 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit }: CardDisplayProp
 
   // Auto-speak when card loads: for reverse speak the target language word, not Russian
   useEffect(() => {
+    // Leaving the previous card must cut its audio: otherwise the delayed
+    // reverse-card speak (item.back) overlaps with this card's auto-speak of
+    // the same word (audio buffer is shared across all elements via cache).
+    stopSpeaking();
+
     setTimer(30);
     setShowBack(false);
     startTimeRef.current = Date.now();
     extraSecondsRef.current = 0;
     timerTotalRef.current = 30;
+    // MUST be cleared: if the card changes while the More panel is open (e.g.
+    // delete with More open), a stale `true` here pauses the countdown of every
+    // following card forever — the card looks hung and the grade is frozen.
+    moreOpenRef.current = false;
 
     // Must be cleared on cleanup and on manual interaction: otherwise the
     // delayed auto-speak lands on top of a word the user just clicked.
@@ -211,13 +224,15 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit }: CardDisplayProp
         if (!typingMode) setTypingMode(true);
       }
     },
-    [onGrade, onDelete, handleFlip, typingMode, item]
+    [onGrade, onDelete, handleFlip, typingMode, item, isVisible]
   );
 
   useEffect(() => {
+    // Hidden page: keep the card mounted, but do not listen to the keyboard
+    if (!isVisible) return;
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
+  }, [handleKeyDown, isVisible]);
 
   const fmt = (s: number) => `${s}s`;
 
@@ -307,6 +322,7 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit }: CardDisplayProp
   // KeyM toggles the More panel (Space flip, 1-4 grade, D delete, R replay, T type)
   useEffect(() => {
     const onMoreKey = (e: KeyboardEvent) => {
+      if (!isVisible) return;
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
       if (e.code === 'KeyM') {

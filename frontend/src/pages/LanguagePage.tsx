@@ -4,15 +4,20 @@ import {
   deleteCard, logReview, logReverseReview, updateCard,
 } from '../services/api';
 import { CardDisplay } from '../components/CardDisplay';
+import { stopSpeaking } from '../utils/tts';
 import type { Card, QueueItem } from '../types';
 import { select, input, label, overlay, modal, btnPrimary, btn } from '../styles/theme';
 
 interface Props {
   mode: 'normal' | 'emergency';
   onNavigate?: (page: string) => void;
+  /** False while this page is hidden by App.tsx — it stays mounted but must not
+   *  react to global keyboard shortcuts (otherwise one Delete hit removes a card
+   *  in this deck AND in the visible one). */
+  isVisible?: boolean;
 }
 
-export function LanguagePage({ mode, onNavigate }: Props) {
+export function LanguagePage({ mode, onNavigate, isVisible = true }: Props) {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [language, setLanguage] = useState('en');
@@ -31,6 +36,10 @@ export function LanguagePage({ mode, onNavigate }: Props) {
 
   // Due-for-repetition counter for the current deck (motivation badge)
   const [dueCount, setDueCount] = useState<{ normal: number; reverse: number; total: number } | null>(null);
+
+  // Delete failures used to be console-only: the card stayed on screen and the
+  // user read it as "the card is stuck". Show it instead.
+  const [deleteError, setDeleteError] = useState('');
 
   const refreshDue = useCallback(async () => {
     try {
@@ -79,6 +88,7 @@ export function LanguagePage({ mode, onNavigate }: Props) {
       }
       setItems(result);
       setCurrentIndex(0);
+      setDeleteError('');
       setSessionStats({ total: 0, again: 0, hard: 0, good: 0, easy: 0, reverse: 0 });
     } catch (err) {
       console.error('Failed to load cards:', err);
@@ -116,46 +126,88 @@ export function LanguagePage({ mode, onNavigate }: Props) {
           await logReview({ card_id: item.id, rating, time_spent_seconds: timeSpent });
         }
       }
+    } catch (err: any) {
+      // The card is gone (deleted here, in the other deck, or from All Words).
+      // Previously the honest 404 was swallowed: the grade did nothing, the card
+      // stayed on screen and looked hung until a manual refresh. Drop it and
+      // move on, exactly like a successful delete.
+      if (err?.response?.status === 404) {
+        stopSpeaking();
+        const nextItems = [...items];
+        nextItems.splice(currentIndex, 1);
+        setItems(nextItems);
+        setCurrentIndex(Math.min(currentIndex, Math.max(0, nextItems.length - 1)));
+        setDeleteError('Эта карточка уже удалена — убрал её из очереди');
+        if (nextItems.length === 0) void loadItems();
+        return;
+      }
+      console.error('Failed to log review:', err);
+      return;
+    }
 
-      if (mode === 'emergency') {
-        if (rating === 1) {
-          const newItems = [...items];
-          const removed = newItems.splice(currentIndex, 1)[0];
-          newItems.push(removed);
-          setItems(newItems);
-        } else {
-          if (currentIndex < items.length - 1) {
-            setCurrentIndex(currentIndex + 1);
-          } else {
-            setItems(prev => prev.filter((_, i) => i !== currentIndex));
-            if (currentIndex >= items.length - 1) setCurrentIndex(Math.max(0, items.length - 2));
-          }
-        }
+    if (mode === 'emergency') {
+      if (rating === 1) {
+        const newItems = [...items];
+        const removed = newItems.splice(currentIndex, 1)[0];
+        newItems.push(removed);
+        setItems(newItems);
       } else {
         if (currentIndex < items.length - 1) {
           setCurrentIndex(currentIndex + 1);
         } else {
-          await loadItems();
+          setItems(prev => prev.filter((_, i) => i !== currentIndex));
+          if (currentIndex >= items.length - 1) setCurrentIndex(Math.max(0, items.length - 2));
         }
-        // Card reviewed → one less due word in this deck
-        refreshDue();
       }
-    } catch (err) {
-      console.error('Failed to log review:', err);
+    } else {
+      if (currentIndex < items.length - 1) {
+        setCurrentIndex(currentIndex + 1);
+      } else {
+        await loadItems();
+      }
+      // Card reviewed → one less due word in this deck
+      refreshDue();
     }
   }, [items, currentIndex, mode, language, selectedTag, refreshDue]);
 
+  // Deleting the current card must both drop it from the queue AND restart the
+  // card's timer: filtering the array alone keeps currentIndex pointing at the
+  // next card, which then renders with the previous card's dead 0s timer —
+  // that is the "card hangs / changes only on refresh" bug. Splice + bump the
+  // current index remounts CardDisplay (its key includes index-driven item id),
+  // which resets the countdown and starts a fresh auto-speak.
   const handleDelete = async () => {
     const item = items[currentIndex];
     if (!item) return;
 
-    if (confirm(`Delete "${item.front}"?`)) {
-      try {
-        await deleteCard(item.card_id);
-        setItems(prev => prev.filter((_, i) => i !== currentIndex));
-      } catch (err) {
+    if (!confirm(`Delete "${item.front}"?`)) return;
+
+    try {
+      await deleteCard(item.card_id);
+    } catch (err: any) {
+      // 404 = already gone (e.g. a duplicate key press); treat as deleted
+      if (err?.response?.status !== 404) {
         console.error('Failed to delete card:', err);
+        setDeleteError('Не удалось удалить карточку — она осталась в колоде');
+        return;
       }
+    }
+
+    stopSpeaking();
+    const nextItems = [...items];
+    nextItems.splice(currentIndex, 1);
+    // Index stays put: the following card slides into the same slot, and the
+    // last card wraps back to the previous one instead of pointing past the end.
+    const nextIndex = Math.min(currentIndex, Math.max(0, nextItems.length - 1));
+    setItems(nextItems);
+    setCurrentIndex(nextIndex);
+    refreshDue();
+
+    // Queue exhausted on screen: refill instead of leaving the user on an
+    // "items: 0" screen (the virtualized <Select a tag to start / No cards due>
+    // branch). Normal mode refetches the due queue; emergency re-reads the tag.
+    if (nextItems.length === 0) {
+      void loadItems();
     }
   };
 
@@ -240,6 +292,27 @@ export function LanguagePage({ mode, onNavigate }: Props) {
         )}
       </div>
 
+      {/* Delete failure (was console-only, looked like a frozen card) */}
+      {deleteError && (
+        <div style={{
+          marginBottom: '12px',
+          padding: '8px 12px',
+          border: '1px solid var(--text-danger)',
+          borderRadius: '4px',
+          color: 'var(--text-danger)',
+          fontSize: '0.85rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '8px',
+        }}>
+          <span>{deleteError}</span>
+          <button onClick={() => setDeleteError('')} style={{ ...btn, minHeight: '32px', padding: '2px 8px', fontSize: '0.8rem' }}>
+            OK
+          </button>
+        </div>
+      )}
+
       {/* Session info */}
       <div style={{
         marginBottom: '12px',
@@ -272,6 +345,7 @@ export function LanguagePage({ mode, onNavigate }: Props) {
           onGrade={handleGrade}
           onDelete={handleDelete}
           onEdit={handleEdit}
+          isVisible={isVisible}
         />
       ) : (
         <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>

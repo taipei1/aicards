@@ -237,6 +237,31 @@ export async function deleteObsidianNote(noteId: number) {
   await api.delete(`/obsidian/notes/${noteId}`);
 }
 
+// ============ UI PREFERENCES (audio) ============
+
+export interface AudioPrefs {
+  audio_enabled: boolean;
+  audio_volume: number;
+}
+
+export async function getPrefs(): Promise<AudioPrefs> {
+  const res = await api.get('/settings/prefs');
+  const d = res.data || {};
+  return {
+    audio_enabled: d.audio_enabled !== false,
+    audio_volume: typeof d.audio_volume === 'number' ? d.audio_volume : 1,
+  };
+}
+
+export async function updatePrefs(prefs: AudioPrefs): Promise<AudioPrefs> {
+  const res = await api.put('/settings/prefs', prefs);
+  const d = res.data || {};
+  return {
+    audio_enabled: d.audio_enabled !== false,
+    audio_volume: typeof d.audio_volume === 'number' ? d.audio_volume : 1,
+  };
+}
+
 export async function getDueCounts(language?: string, tag?: string): Promise<Record<string, { normal: number; reverse: number; total: number }>> {
   const params: Record<string, any> = {};
   if (language) params.language = language;
