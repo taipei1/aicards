@@ -26,6 +26,10 @@
   --accent: #2563eb;
   --accent-hover: #1d4ed8;
   --text-on-accent: #ffffff;
+  /* Sound panel in Settings */
+  --sound-accent: #2563eb;
+  --sound-accent-soft: rgba(37, 99, 235, 0.4);
+  --sound-range-track: #dbeafe;
 }
 
 .dark-mode {
@@ -49,6 +53,65 @@
   --accent: #3b82f6;
   --accent-hover: #60a5fa;
   --text-on-accent: #ffffff;
+  --sound-accent: #60a5fa;
+  --sound-accent-soft: rgba(96, 165, 250, 0.45);
+  --sound-range-track: #1e3a5f;
+}
+
+/* Volume slider + sound checkbox: accent in the app's blue, on both themes
+   and both browser engines (Firefox needs ::-moz-range-* separately). */
+input[type="range"].sound-range {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  accent-color: var(--sound-accent);
+}
+
+input[type="range"].sound-range::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--sound-range-track);
+  border: 1px solid var(--sound-accent-soft);
+}
+
+input[type="range"].sound-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--sound-accent);
+  border: 2px solid var(--bg-primary);
+  box-shadow: 0 0 0 1px var(--sound-accent);
+  cursor: inherit;
+}
+
+input[type="range"].sound-range::-moz-range-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--sound-range-track);
+  border: 1px solid var(--sound-accent-soft);
+}
+
+input[type="range"].sound-range::-moz-range-progress {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--sound-accent);
+}
+
+input[type="range"].sound-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--sound-accent);
+  border: 2px solid var(--bg-primary);
+  box-shadow: 0 0 0 1px var(--sound-accent);
+  cursor: inherit;
+}
+
+input[type="checkbox"].sound-check {
+  accent-color: var(--sound-accent);
 }
 
 html.dark-mode body {

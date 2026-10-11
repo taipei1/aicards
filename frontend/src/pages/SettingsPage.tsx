@@ -250,14 +250,14 @@ export function SettingsPage() {
 
       {/* Sound */}
       <div style={{
-        border: '2px solid var(--border-primary)',
+        border: '2px solid var(--sound-accent)',
         padding: '12px',
         borderRadius: '4px',
         background: 'var(--bg-primary)',
         maxWidth: '640px',
         marginTop: '16px',
       }}>
-        <h3 style={{ marginBottom: '4px', color: 'var(--text-primary)', fontSize: '1rem' }}>
+        <h3 style={{ marginBottom: '4px', color: 'var(--sound-accent)', fontSize: '1rem' }}>
           Звук
         </h3>
         <div style={{ marginBottom: '12px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
@@ -268,6 +268,7 @@ export function SettingsPage() {
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: 'var(--text-primary)' }}>
             <input
               type="checkbox"
+              className="sound-check"
               checked={audioEnabled}
               onChange={(e) => setAudioEnabled(e.target.checked)}
               style={{ width: '18px', height: '18px', cursor: 'pointer' }}
@@ -276,9 +277,12 @@ export function SettingsPage() {
           </label>
 
           <div>
-            <label style={label}>Громкость: {Math.round(audioVolume * 100)}%</label>
+            <label style={{ ...label, color: 'var(--sound-accent)' }}>
+              Громкость: {Math.round(audioVolume * 100)}%
+            </label>
             <input
               type="range"
+              className="sound-range"
               min="0"
               max="100"
               step="5"
@@ -304,10 +308,38 @@ export function SettingsPage() {
           </div>
 
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginTop: '4px' }}>
-            <button onClick={handleSavePrefs} disabled={prefsSaving} style={btnPrimary}>
+            <button
+              onClick={handleSavePrefs}
+              disabled={prefsSaving}
+              style={{
+                border: '2px solid var(--sound-accent)',
+                background: 'var(--sound-accent)',
+                color: 'var(--text-on-accent)',
+                padding: '10px 16px',
+                fontSize: '0.9rem',
+                fontWeight: 'bold',
+                cursor: prefsSaving ? 'wait' : 'pointer',
+                borderRadius: '4px',
+                minHeight: '44px',
+              }}
+            >
               {prefsSaving ? 'Saving...' : 'Save sound'}
             </button>
-            <button onClick={handleTestSound} disabled={audioTesting} style={btn}>
+            <button
+              onClick={handleTestSound}
+              disabled={audioTesting}
+              style={{
+                border: '2px solid var(--sound-accent)',
+                background: 'var(--bg-primary)',
+                color: 'var(--sound-accent)',
+                padding: '10px 16px',
+                fontSize: '0.9rem',
+                fontWeight: 'bold',
+                cursor: audioTesting ? 'wait' : 'pointer',
+                borderRadius: '4px',
+                minHeight: '44px',
+              }}
+            >
               {audioTesting ? 'Playing...' : '▶ Test sound'}
             </button>
             {prefsMessage && (
@@ -321,7 +353,7 @@ export function SettingsPage() {
           </div>
 
           {!audioEnabled && (
-            <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+            <div style={{ color: 'var(--sound-accent)', fontSize: '0.8rem' }}>
               Звук выключен — слова не озвучиваются вообще (ни кнопкой, ни автоматически).
             </div>
           )}
