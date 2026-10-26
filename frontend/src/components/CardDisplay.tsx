@@ -5,6 +5,7 @@ import { speak, speakSlow, stopSpeaking } from '../utils/tts';
 import { generateExamples, generateNotes } from '../services/api';
 import type { ExampleItem, ExampleSynonym } from '../services/api';
 import { ModelLabel } from './ModelLabel';
+import { hasModifier, isTypingTarget } from '../utils/keyboard';
 import { btnGrade, cardBox, tagStyle } from '../styles/theme';
 
 const LANG_MAP: Record<string, string> = {
@@ -218,8 +219,7 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+      if (hasModifier(e) || isTypingTarget(e.target)) return;
       if (e.code === 'Space') { e.preventDefault(); handleFlip(); }
       if (e.code === 'Digit1') { onGrade(1, getTimeSpent()); }
       if (e.code === 'Digit2') { onGrade(2, getTimeSpent()); }
@@ -333,8 +333,7 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
   useEffect(() => {
     const onMoreKey = (e: KeyboardEvent) => {
       if (!isVisible) return;
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+      if (hasModifier(e) || isTypingTarget(e.target)) return;
       if (e.code === 'KeyM') {
         e.preventDefault();
         toggleMore();

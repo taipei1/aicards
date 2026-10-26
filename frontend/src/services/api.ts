@@ -116,7 +116,7 @@ export async function translateWord(
   word: string,
   sourceLang: string,
   targetLang: string
-): Promise<{ translated: string | null; source_lang: string; target_lang: string }> {
+): Promise<{ translated: string | null; source_lang: string; target_lang: string; model?: string }> {
   try {
     const res = await api.post('/translate', { word, source_lang: sourceLang, target_lang: targetLang });
     return res.data;

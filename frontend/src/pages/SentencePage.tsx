@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { generateSentence } from '../services/api';
 import { speak, speakSlow } from '../utils/tts';
 import { ModelLabel } from '../components/ModelLabel';
+import { useLanguage } from '../context/LanguageContext';
+import { hasModifier, isTypingTarget } from '../utils/keyboard';
 import { cardBox, btn, btnPrimary, select } from '../styles/theme';
 
 const LANG_MAP: Record<string, string> = {
@@ -11,10 +13,12 @@ const LANG_MAP: Record<string, string> = {
 
 interface SentencePageProps {
   onNavigate?: (page: string) => void;
+  /** False while another tab is visible — pages stay mounted. */
+  isVisible?: boolean;
 }
 
-export function SentencePage({ onNavigate }: SentencePageProps) {
-  const [language, setLanguage] = useState<string>('en');
+export function SentencePage({ onNavigate, isVisible = true }: SentencePageProps) {
+  const { language, setLanguage } = useLanguage();
   const [sentence, setSentence] = useState<{
     sentence_in_target: string;
     translation_in_russian: string;
@@ -53,6 +57,7 @@ export function SentencePage({ onNavigate }: SentencePageProps) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isVisible || hasModifier(e) || isTypingTarget(e.target)) return;
       if (e.key === ' ' || e.key === 'Space') {
         e.preventDefault();
         if (sentence) {
@@ -73,7 +78,7 @@ export function SentencePage({ onNavigate }: SentencePageProps) {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [sentence, language, loading, handleGenerate]);
+  }, [sentence, language, loading, handleGenerate, isVisible]);
 
   const directionLabel = (() => {
     if (!sentence) return '';

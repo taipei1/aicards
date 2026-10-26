@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { syncObsidian, getDueNotes, getObsidianNotes, getObsidianNote, generateQuestions, logObsidianReview } from '../services/api';
+import { hasModifier, isTypingTarget } from '../utils/keyboard';
 import { btn, btnGrade, tagStyle } from '../styles/theme';
 
 interface Note {
@@ -16,7 +17,12 @@ interface Question {
   answer: string;
 }
 
-export function ObsidianPage() {
+interface ObsidianPageProps {
+  /** False while another tab is visible — pages stay mounted. */
+  isVisible?: boolean;
+}
+
+export function ObsidianPage({ isVisible = true }: ObsidianPageProps) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [currentNote, setCurrentNote] = useState<Note | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -169,6 +175,7 @@ export function ObsidianPage() {
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      if (!isVisible || hasModifier(e) || isTypingTarget(e.target)) return;
       if (e.code === 'Space') {
         e.preventDefault();
         setIsRevealed((r) => !r);
@@ -187,7 +194,7 @@ export function ObsidianPage() {
         handleBackToList();
       }
     },
-    [isRevealed, currentNote, currentQuestion, questions, activeTab, selectedNoteContent]
+    [isRevealed, currentNote, currentQuestion, questions, activeTab, selectedNoteContent, isVisible]
   );
 
   useEffect(() => {

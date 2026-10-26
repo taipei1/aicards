@@ -2,15 +2,16 @@ import { useState, useEffect } from 'react';
 import { searchCards, updateCard, deleteCard } from '../services/api';
 import type { Card } from '../types';
 import { speak } from '../utils/tts';
+import { useLanguage } from '../context/LanguageContext';
 import { normalizeSpaces, trimSpaces } from '../utils/text';
 import { select, input, label, overlay, modal, btnPrimary, btnSmall, tagStyle, truncate } from '../styles/theme';
 
 type SortBy = 'default' | 'alpha' | 'date' | 'stability' | 'difficulty';
 
 export function WordListPage() {
+  const { language, setLanguage } = useLanguage();
   const [cards, setCards] = useState<Card[]>([]);
   const [search, setSearch] = useState('');
-  const [language, setLanguage] = useState('en');
   const [sortBy, setSortBy] = useState<SortBy>('default');
   const [loading, setLoading] = useState(false);
   const [editingCard, setEditingCard] = useState<Card | null>(null);
@@ -162,18 +163,19 @@ export function WordListPage() {
             </div>
             <div style={{ marginBottom: '10px' }}>
               <label style={label}>Back (RU):</label>
-              <input type="text" value={editBack} onChange={(e) => setEditBack(normalizeSpaces(e.target.value))} style={input} />
+              <input type="text" value={editBack} onChange={(e) => setEditBack(e.target.value)} onBlur={() => setEditBack((v) => trimSpaces(v))} style={input} />
             </div>
             <div style={{ marginBottom: '10px' }}>
               <label style={label}>Hint:</label>
-              <input type="text" value={editHint} onChange={(e) => setEditHint(normalizeSpaces(e.target.value))} style={input} />
+              <input type="text" value={editHint} onChange={(e) => setEditHint(e.target.value)} onBlur={() => setEditHint((v) => trimSpaces(v))} style={input} />
             </div>
             <div style={{ marginBottom: '16px' }}>
               <label style={label}>Tags:</label>
               <input
                 type="text"
                 value={editTags}
-                onChange={(e) => setEditTags(normalizeSpaces(e.target.value))}
+                onChange={(e) => setEditTags(e.target.value)}
+                onBlur={() => setEditTags((v) => trimSpaces(v))}
                 placeholder="#tag1 #tag2"
                 style={input}
               />

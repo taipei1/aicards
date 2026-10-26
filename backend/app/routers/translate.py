@@ -1,6 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from deep_translator import GoogleTranslator
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.services.translation_service import translate_text
 
 router = APIRouter()
 
@@ -15,22 +18,18 @@ class TranslateResponse(BaseModel):
     translated: str | None
     source_lang: str
     target_lang: str
+    model: str = ""
     error: str | None = None
 
 
-@router.post("/", response_model=TranslateResponse)
-async def translate(req: TranslateRequest):
-    try:
-        result = GoogleTranslator(source=req.source_lang, target=req.target_lang).translate(req.word)
-        return TranslateResponse(
-            translated=result,
-            source_lang=req.source_lang,
-            target_lang=req.target_lang,
-        )
-    except Exception:
-        return TranslateResponse(
-            translated=None,
-            source_lang=req.source_lang,
-            target_lang=req.target_lang,
-            error="Translation unavailable",
-        )
+@router.post("", response_model=TranslateResponse)
+@router.post("/", response_model=TranslateResponse, include_in_schema=False)
+def translate(req: TranslateRequest, db: Session = Depends(get_db)):
+    result = translate_text(req.word, req.source_lang, req.target_lang, db)
+    return TranslateResponse(
+        translated=result["translated"],
+        source_lang=req.source_lang,
+        target_lang=req.target_lang,
+        model=result.get("model", ""),
+        error=result.get("error"),
+    )

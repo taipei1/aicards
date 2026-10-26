@@ -204,9 +204,9 @@ export default function App() {
             <LanguagePage mode="emergency" isVisible={currentPage === 'emergency'} onNavigate={(np) => setCurrentPage(np as Page)} />
           )}
           {p === 'add-word' && <AddWordPage />}
-          {p === 'sentences' && <SentencePage onNavigate={(np) => setCurrentPage(np as Page)} />}
+          {p === 'sentences' && <SentencePage isVisible={currentPage === 'sentences'} onNavigate={(np) => setCurrentPage(np as Page)} />}
           {p === 'words' && <WordListPage />}
-          {p === 'obsidian' && <ObsidianPage />}
+          {p === 'obsidian' && <ObsidianPage isVisible={currentPage === 'obsidian'} />}
           {p === 'stats' && <StatsPage />}
           {p === 'settings' && <SettingsPage />}
         </div>

@@ -1,16 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
 import { createCard, importCards, translateWord } from '../services/api';
+import { useLanguage } from '../context/LanguageContext';
 import { normalizeSpaces, trimSpaces } from '../utils/text';
 import { select, input, label, btnPrimary, btn } from '../styles/theme';
 
 export function AddWordPage() {
+  const { language, setLanguage } = useLanguage();
   const [front, setFront] = useState('');
   const [back, setBack] = useState('');
   const [hint, setHint] = useState('');
   const [tags, setTags] = useState('');
-  const [language, setLanguage] = useState('en');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [translating, setTranslating] = useState(false);
+  const [translateError, setTranslateError] = useState('');
 
   // Bulk table mode
   const [showBulk, setShowBulk] = useState(false);
@@ -21,53 +24,85 @@ export function AddWordPage() {
   const [csvText, setCsvText] = useState('');
   const [csvMessage, setCsvMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  const autoFilledRef = useRef(false);
   const userEditedRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  // Ignore translations that arrive after the word/language changed again.
+  const translateSeqRef = useRef(0);
+  // Skip duplicate auto-translate runs for the same word/language (e.g. when
+  // blur only trims spaces, or React StrictMode runs the effect twice).
+  const lastAutoKeyRef = useRef('');
 
   // Auto-translate with debounce
   useEffect(() => {
     if (!front.trim()) {
+      lastAutoKeyRef.current = '';
       setBack('');
-      autoFilledRef.current = false;
+      setTranslating(false);
+      setTranslateError('');
       return;
     }
     if (userEditedRef.current) return;
+    const key = `${front.trim()}|${language}`;
+    if (lastAutoKeyRef.current === key) return;
 
     clearTimeout(debounceRef.current);
+    const seq = ++translateSeqRef.current;
     debounceRef.current = setTimeout(async () => {
-      if (!front.trim()) return;
+      if (userEditedRef.current || seq !== translateSeqRef.current) return;
+      lastAutoKeyRef.current = key;
+      // Do not leave the previous word's translation in the field while the
+      // new one is being fetched: saving too early would store the wrong text.
+      setBack('');
+      setTranslating(true);
+      setTranslateError('');
       try {
         const result = await translateWord(front.trim(), language, 'ru');
-        if (result.translated && !userEditedRef.current) {
-          setBack(normalizeSpaces(result.translated));
-          autoFilledRef.current = true;
+        if (seq !== translateSeqRef.current || userEditedRef.current) return;
+        if (result.translated) {
+          setBack(trimSpaces(result.translated));
+        } else {
+          setTranslateError('Translation unavailable — type it manually.');
         }
       } catch {
-        // leave Translation field empty on failure
+        if (seq === translateSeqRef.current && !userEditedRef.current) {
+          setTranslateError('Translation unavailable — type it manually.');
+        }
+      } finally {
+        if (seq === translateSeqRef.current) setTranslating(false);
       }
-    }, 500);
+    }, 400);
 
     return () => clearTimeout(debounceRef.current);
   }, [front, language]);
 
   const handleBackChange = (value: string) => {
-    setBack(normalizeSpaces(value));
+    setBack(value);
     userEditedRef.current = true;
-    autoFilledRef.current = false;
+    setTranslating(false);
+    setTranslateError('');
   };
 
   const handleManualTranslate = async () => {
     if (!front.trim()) return;
+    userEditedRef.current = false;
+    lastAutoKeyRef.current = `${front.trim()}|${language}`;
+    const seq = ++translateSeqRef.current;
+    setTranslating(true);
+    setTranslateError('');
     try {
       const result = await translateWord(front.trim(), language, 'ru');
+      if (seq !== translateSeqRef.current) return;
       if (result.translated) {
-        setBack(normalizeSpaces(result.translated));
-        autoFilledRef.current = true;
-        userEditedRef.current = false;
+        setBack(trimSpaces(result.translated));
+      } else {
+        setTranslateError('Translation unavailable — type it manually.');
       }
     } catch {
-      // leave empty on failure
+      if (seq === translateSeqRef.current) {
+        setTranslateError('Translation unavailable — type it manually.');
+      }
+    } finally {
+      if (seq === translateSeqRef.current) setTranslating(false);
     }
   };
 
@@ -97,8 +132,10 @@ export function AddWordPage() {
       setBack('');
       setHint('');
       setTags('');
-      autoFilledRef.current = false;
       userEditedRef.current = false;
+      lastAutoKeyRef.current = '';
+      setTranslating(false);
+      setTranslateError('');
       setMessage({ text: '✓ Card added!', type: 'success' });
     } catch (err: any) {
       if (err.response?.status === 409) {
@@ -112,7 +149,13 @@ export function AddWordPage() {
 
   const handleBulkRowChange = (index: number, field: 'front' | 'back' | 'hint' | 'tags', value: string) => {
     const rows = [...bulkRows];
-    rows[index][field] = normalizeSpaces(value);
+    rows[index][field] = value;
+    setBulkRows(rows);
+  };
+
+  const normalizeBulkRow = (index: number, field: 'front' | 'back' | 'hint' | 'tags') => {
+    const rows = [...bulkRows];
+    rows[index][field] = trimSpaces(rows[index][field]);
     setBulkRows(rows);
   };
 
@@ -194,7 +237,8 @@ export function AddWordPage() {
             <label style={label}>Word</label>
             <input
               value={front}
-              onChange={(e) => { setFront(normalizeSpaces(e.target.value)); userEditedRef.current = false; }}
+              onChange={(e) => { setFront(e.target.value); userEditedRef.current = false; }}
+              onBlur={() => setFront((v) => normalizeSpaces(v))}
               placeholder="Word"
               style={input}
             />
@@ -206,24 +250,31 @@ export function AddWordPage() {
               <input
                 value={back}
                 onChange={(e) => handleBackChange(e.target.value)}
+                onBlur={() => setBack((v) => trimSpaces(v))}
                 placeholder="Translation"
                 style={{ ...input, flex: 1 }}
               />
               <button
                 onClick={handleManualTranslate}
-                disabled={!front.trim()}
+                disabled={!front.trim() || translating}
                 style={{ ...btn, whiteSpace: 'nowrap', minHeight: '44px' }}
               >
-                Translate
+                {translating ? 'Translating...' : 'Translate'}
               </button>
             </div>
+            {translateError && (
+              <div style={{ color: 'var(--text-danger)', fontSize: '0.8rem', marginTop: '4px' }}>
+                {translateError}
+              </div>
+            )}
           </div>
 
           <div>
             <label style={label}>Example sentence</label>
             <input
               value={hint}
-              onChange={(e) => setHint(normalizeSpaces(e.target.value))}
+              onChange={(e) => setHint(e.target.value)}
+              onBlur={() => setHint((v) => normalizeSpaces(v))}
               placeholder="Example sentence (optional)"
               style={input}
             />
@@ -233,7 +284,8 @@ export function AddWordPage() {
             <label style={label}>Tags</label>
             <input
               value={tags}
-              onChange={(e) => setTags(normalizeSpaces(e.target.value))}
+              onChange={(e) => setTags(e.target.value)}
+              onBlur={() => setTags((v) => normalizeSpaces(v))}
               placeholder="#tag1 #tag2"
               style={input}
             />
@@ -350,6 +402,7 @@ export function AddWordPage() {
                   <input
                     value={row.front}
                     onChange={(e) => handleBulkRowChange(i, 'front', e.target.value)}
+                    onBlur={() => normalizeBulkRow(i, 'front')}
                     placeholder="Word"
                     style={{ ...input, padding: '6px 8px', fontSize: '0.85rem' }}
                   />
@@ -358,6 +411,7 @@ export function AddWordPage() {
                   <input
                     value={row.back}
                     onChange={(e) => handleBulkRowChange(i, 'back', e.target.value)}
+                    onBlur={() => normalizeBulkRow(i, 'back')}
                     placeholder="Translation"
                     style={{ ...input, padding: '6px 8px', fontSize: '0.85rem' }}
                   />
@@ -366,6 +420,7 @@ export function AddWordPage() {
                   <input
                     value={row.hint}
                     onChange={(e) => handleBulkRowChange(i, 'hint', e.target.value)}
+                    onBlur={() => normalizeBulkRow(i, 'hint')}
                     placeholder="Hint"
                     style={{ ...input, padding: '6px 8px', fontSize: '0.85rem' }}
                   />
@@ -374,6 +429,7 @@ export function AddWordPage() {
                   <input
                     value={row.tags}
                     onChange={(e) => handleBulkRowChange(i, 'tags', e.target.value)}
+                    onBlur={() => normalizeBulkRow(i, 'tags')}
                     placeholder="#tag"
                     style={{ ...input, padding: '6px 8px', fontSize: '0.85rem' }}
                   />

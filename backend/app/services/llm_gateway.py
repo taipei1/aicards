@@ -188,12 +188,11 @@ def chat_completion_ex(
                     # entire max_tokens budget in `reasoning_content` and returns
                     # finish_reason=length with an EMPTY `content` — the app then
                     # sees nothing and reports "LLM gateway error".
-                    # `enable_thinking` is ignored by this gateway; the flags below
-                    # are the ones that actually suppress it (verified against the
-                    # live gateway). Plain models ignore them harmlessly.
-                    "enable_thinking": False,
+                    # Keep only the standard OpenAI field: local OmniRoute models
+                    # reject extra properties such as `enable_thinking`/`thinking`
+                    # with HTTP 400. If a gateway ignores this, the empty-content
+                    # guard below still sends the request to the Groq fallback.
                     "reasoning_effort": "none",
-                    "thinking": {"type": "disabled"},
                 },
                 # A dead host must not eat the whole request timeout: connect
                 # quickly, then give the model the full read window.
