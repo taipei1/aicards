@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createCard, importCards, translateWord } from '../services/api';
+import { normalizeSpaces, trimSpaces } from '../utils/text';
 import { select, input, label, btnPrimary, btn } from '../styles/theme';
 
 export function AddWordPage() {
@@ -39,7 +40,7 @@ export function AddWordPage() {
       try {
         const result = await translateWord(front.trim(), language, 'ru');
         if (result.translated && !userEditedRef.current) {
-          setBack(result.translated);
+          setBack(normalizeSpaces(result.translated));
           autoFilledRef.current = true;
         }
       } catch {
@@ -51,7 +52,7 @@ export function AddWordPage() {
   }, [front, language]);
 
   const handleBackChange = (value: string) => {
-    setBack(value);
+    setBack(normalizeSpaces(value));
     userEditedRef.current = true;
     autoFilledRef.current = false;
   };
@@ -61,7 +62,7 @@ export function AddWordPage() {
     try {
       const result = await translateWord(front.trim(), language, 'ru');
       if (result.translated) {
-        setBack(result.translated);
+        setBack(normalizeSpaces(result.translated));
         autoFilledRef.current = true;
         userEditedRef.current = false;
       }
@@ -85,9 +86,9 @@ export function AddWordPage() {
       )];
 
       await createCard({
-        front: front.trim(),
-        back: back.trim(),
-        hint: hint.trim() || undefined,
+        front: trimSpaces(front),
+        back: trimSpaces(back),
+        hint: trimSpaces(hint) || undefined,
         tags: parsedTags,
         language,
       });
@@ -111,7 +112,7 @@ export function AddWordPage() {
 
   const handleBulkRowChange = (index: number, field: 'front' | 'back' | 'hint' | 'tags', value: string) => {
     const rows = [...bulkRows];
-    rows[index][field] = value;
+    rows[index][field] = normalizeSpaces(value);
     setBulkRows(rows);
   };
 
@@ -134,7 +135,7 @@ export function AddWordPage() {
     // Build CSV content from rows
     const csvLines = validRows.map(r => {
       const tags = (r.tags.match(/#(\w+)/g) || []).map(t => t.slice(1).toLowerCase()).join(' ');
-      return `${r.front.trim()},${r.back.trim()},${r.hint.trim() || ''},${tags}`;
+      return `${trimSpaces(r.front)},${trimSpaces(r.back)},${trimSpaces(r.hint)},${tags}`;
     });
     const csvContent = csvLines.join('\n');
 
@@ -193,7 +194,7 @@ export function AddWordPage() {
             <label style={label}>Word</label>
             <input
               value={front}
-              onChange={(e) => { setFront(e.target.value); userEditedRef.current = false; }}
+              onChange={(e) => { setFront(normalizeSpaces(e.target.value)); userEditedRef.current = false; }}
               placeholder="Word"
               style={input}
             />
@@ -222,7 +223,7 @@ export function AddWordPage() {
             <label style={label}>Example sentence</label>
             <input
               value={hint}
-              onChange={(e) => setHint(e.target.value)}
+              onChange={(e) => setHint(normalizeSpaces(e.target.value))}
               placeholder="Example sentence (optional)"
               style={input}
             />
@@ -232,7 +233,7 @@ export function AddWordPage() {
             <label style={label}>Tags</label>
             <input
               value={tags}
-              onChange={(e) => setTags(e.target.value)}
+              onChange={(e) => setTags(normalizeSpaces(e.target.value))}
               placeholder="#tag1 #tag2"
               style={input}
             />

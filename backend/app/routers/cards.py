@@ -13,6 +13,7 @@ from app.schemas import (
 )
 from app.services.fsrs_service import fsrs_service
 from app.utils.csv_parser import CSVParser
+from app.utils.text import normalize_spaces
 
 router = APIRouter()
 
@@ -90,21 +91,32 @@ def import_cards(
     
     for i, card_data in enumerate(parsed_cards):
         try:
+            # Normalise whitespace once, so "  take   off " and "take off"
+            # cannot become two different cards.
+            front = normalize_spaces(card_data["front"]) or ""
+            back = normalize_spaces(card_data["back"]) or ""
+            hint = normalize_spaces(card_data.get("hint")) or None
+            tags = [
+                t for t in (
+                    normalize_spaces(str(tag)) for tag in card_data.get("tags", [])
+                ) if t
+            ]
+
             # Skip empty cards
-            if not card_data["front"] or not card_data["back"]:
+            if not front or not back:
                 continue
-            
+
             # Check for duplicates (BEFORE adding to session)
             existing = db.query(Card).filter(
                 Card.user_id == user.id,
-                Card.front == card_data["front"],
+                Card.front == front,
                 Card.language == request.language
             ).first()
-            
+
             if existing:
                 duplicates += 1
                 conflicts.append(CSVConflict(
-                    front=card_data["front"],
+                    front=front,
                     existing_back=existing.back,
                     existing_tags=existing.tags or []
                 ))
@@ -126,15 +138,12 @@ def import_cards(
             else:
                 stability, difficulty = 1.0, 5.0
             
-            # Tags from parsed data
-            tags = card_data.get("tags", [])
-            
             # Create card
             card = Card(
                 user_id=user.id,
-                front=card_data["front"],
-                back=card_data["back"],
-                hint=card_data.get("hint") or None,
+                front=front,
+                back=back,
+                hint=hint,
                 tags=tags,
                 language=request.language,
                 stability=stability,

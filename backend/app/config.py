@@ -17,9 +17,11 @@ class Settings(BaseSettings):
     # Obsidian
     obsidian_folder_path: str = "../obsidian-test"
     
-    # Groq (legacy, kept for env compat — LLM calls go via OmniRoute gateway now)
+    # Groq (legacy + chat fallback when the OmniRoute host is unreachable)
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
+    # Fast, strong OpenAI-compatible model used only when OmniRoute fails.
+    groq_fallback_model: str = "openai/gpt-oss-120b"
 
     # OmniRoute LLM gateway (OpenAI-compatible). All LLM chat/embedding
     # requests go through it. api_key can also be set via Settings UI

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { searchCards, updateCard, deleteCard } from '../services/api';
 import type { Card } from '../types';
 import { speak } from '../utils/tts';
+import { normalizeSpaces, trimSpaces } from '../utils/text';
 import { select, input, label, overlay, modal, btnPrimary, btnSmall, tagStyle, truncate } from '../styles/theme';
 
 type SortBy = 'default' | 'alpha' | 'date' | 'stability' | 'difficulty';
@@ -70,8 +71,8 @@ export function WordListPage() {
 
   const handleEdit = (card: Card) => {
     setEditingCard(card);
-    setEditBack(card.back);
-    setEditHint(card.hint || '');
+    setEditBack(normalizeSpaces(card.back));
+    setEditHint(normalizeSpaces(card.hint || ''));
     setEditTags(card.tags.map(t => `#${t}`).join(' '));
   };
 
@@ -81,9 +82,11 @@ export function WordListPage() {
       const parsedTags = [...new Set(
         (editTags.match(/#(\w+)/g) || []).map(t => t.slice(1).toLowerCase())
       )];
-      await updateCard(editingCard.id, { back: editBack, hint: editHint, tags: parsedTags });
+      const cleanBack = trimSpaces(editBack);
+      const cleanHint = trimSpaces(editHint);
+      await updateCard(editingCard.id, { back: cleanBack, hint: cleanHint, tags: parsedTags });
       setCards(prev => prev.map(c =>
-        c.id === editingCard.id ? { ...c, back: editBack, hint: editHint, tags: parsedTags } : c
+        c.id === editingCard.id ? { ...c, back: cleanBack, hint: cleanHint, tags: parsedTags } : c
       ));
       setEditingCard(null);
     } catch (err) {
@@ -159,18 +162,18 @@ export function WordListPage() {
             </div>
             <div style={{ marginBottom: '10px' }}>
               <label style={label}>Back (RU):</label>
-              <input type="text" value={editBack} onChange={(e) => setEditBack(e.target.value)} style={input} />
+              <input type="text" value={editBack} onChange={(e) => setEditBack(normalizeSpaces(e.target.value))} style={input} />
             </div>
             <div style={{ marginBottom: '10px' }}>
               <label style={label}>Hint:</label>
-              <input type="text" value={editHint} onChange={(e) => setEditHint(e.target.value)} style={input} />
+              <input type="text" value={editHint} onChange={(e) => setEditHint(normalizeSpaces(e.target.value))} style={input} />
             </div>
             <div style={{ marginBottom: '16px' }}>
               <label style={label}>Tags:</label>
               <input
                 type="text"
                 value={editTags}
-                onChange={(e) => setEditTags(e.target.value)}
+                onChange={(e) => setEditTags(normalizeSpaces(e.target.value))}
                 placeholder="#tag1 #tag2"
                 style={input}
               />

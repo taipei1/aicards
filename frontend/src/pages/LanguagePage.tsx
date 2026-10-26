@@ -5,6 +5,7 @@ import {
 } from '../services/api';
 import { CardDisplay } from '../components/CardDisplay';
 import { stopSpeaking } from '../utils/tts';
+import { normalizeSpaces, trimSpaces } from '../utils/text';
 import type { Card, QueueItem } from '../types';
 import { select, input, label, overlay, modal, btnPrimary, btn } from '../styles/theme';
 
@@ -213,8 +214,8 @@ export function LanguagePage({ mode, onNavigate, isVisible = true }: Props) {
 
   const handleEdit = (item: QueueItem) => {
     setEditingItem(item);
-    setEditBack(item.card_back);
-    setEditHint(item.hint || '');
+    setEditBack(normalizeSpaces(item.card_back));
+    setEditHint(normalizeSpaces(item.hint || ''));
     setEditTags(item.tags.map(t => `#${t}`).join(' '));
   };
 
@@ -224,10 +225,12 @@ export function LanguagePage({ mode, onNavigate, isVisible = true }: Props) {
       const parsedTags = [...new Set(
         (editTags.match(/#(\w+)/g) || []).map(t => t.slice(1).toLowerCase())
       )];
-      await updateCard(editingItem.card_id, { back: editBack, hint: editHint, tags: parsedTags });
+      const cleanBack = trimSpaces(editBack);
+      const cleanHint = trimSpaces(editHint);
+      await updateCard(editingItem.card_id, { back: cleanBack, hint: cleanHint, tags: parsedTags });
       setItems(prev =>
         prev.map(c =>
-          c.id === editingItem.id ? { ...c, hint: editHint, tags: parsedTags, card_back: editBack, back: c.is_reverse ? c.card_front : editBack } : c
+          c.id === editingItem.id ? { ...c, hint: cleanHint, tags: parsedTags, card_back: cleanBack, back: c.is_reverse ? c.card_front : cleanBack } : c
         )
       );
       setEditingItem(null);
@@ -378,18 +381,18 @@ export function LanguagePage({ mode, onNavigate, isVisible = true }: Props) {
             </div>
             <div style={{ marginBottom: '10px' }}>
               <label style={label}>Back (RU):</label>
-              <input type="text" value={editBack} onChange={(e) => setEditBack(e.target.value)} style={input} />
+              <input type="text" value={editBack} onChange={(e) => setEditBack(normalizeSpaces(e.target.value))} style={input} />
             </div>
             <div style={{ marginBottom: '10px' }}>
               <label style={label}>Hint:</label>
-              <input type="text" value={editHint} onChange={(e) => setEditHint(e.target.value)} style={input} />
+              <input type="text" value={editHint} onChange={(e) => setEditHint(normalizeSpaces(e.target.value))} style={input} />
             </div>
             <div style={{ marginBottom: '16px' }}>
               <label style={label}>Tags:</label>
               <input
                 type="text"
                 value={editTags}
-                onChange={(e) => setEditTags(e.target.value)}
+                onChange={(e) => setEditTags(normalizeSpaces(e.target.value))}
                 placeholder="#tag1 #tag2"
                 style={input}
               />

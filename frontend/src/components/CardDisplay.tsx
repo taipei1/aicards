@@ -4,6 +4,7 @@ import type { QueueItem } from '../types';
 import { speak, speakSlow, stopSpeaking } from '../utils/tts';
 import { generateExamples, generateNotes } from '../services/api';
 import type { ExampleItem, ExampleSynonym } from '../services/api';
+import { ModelLabel } from './ModelLabel';
 import { btnGrade, cardBox, tagStyle } from '../styles/theme';
 
 const LANG_MAP: Record<string, string> = {
@@ -41,10 +42,13 @@ function stripDiacritics(s: string): string {
 // Lightweight Markdown rendering for the raw notes answer:
 // keeps the model's own structure (headings, lists, bold).
 function mdInline(s: string, keyPrefix: string): ReactNode[] {
-  const parts = s.split(/(\*\*.+?\*\*)/g);
+  const parts = s.split(/(\*\*.+?\*\*|\*[^*]+\*)/g);
   return parts.map((p, i) => {
-    const m = /^\*\*(.+)\*\*$/.exec(p);
-    return m ? <strong key={`${keyPrefix}-${i}`}>{m[1]}</strong> : <span key={`${keyPrefix}-${i}`}>{p}</span>;
+    const strong = /^\*\*(.+)\*\*$/.exec(p);
+    if (strong) return <strong key={`${keyPrefix}-${i}`}>{strong[1]}</strong>;
+    const em = /^\*([^*]+)\*$/.exec(p);
+    if (em) return <em key={`${keyPrefix}-${i}`}>{em[1]}</em>;
+    return <span key={`${keyPrefix}-${i}`}>{p}</span>;
   });
 }
 
@@ -101,8 +105,10 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
   const [examplesSynonyms, setExamplesSynonyms] = useState<ExampleSynonym[]>([]);
   const [examplesLoading, setExamplesLoading] = useState(false);
   const [examplesError, setExamplesError] = useState('');
+  const [examplesModel, setExamplesModel] = useState('');
   const [notesLoading, setNotesLoading] = useState(false);
   const [notesError, setNotesError] = useState('');
+  const [notesModel, setNotesModel] = useState('');
 
   // Auto-speak when card loads: for reverse speak the target language word, not Russian
   useEffect(() => {
@@ -163,7 +169,9 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
     setExamplesNotes('');
     setExamplesSynonyms([]);
     setExamplesError('');
+    setExamplesModel('');
     setNotesError('');
+    setNotesModel('');
   }, [item.id]);
 
   useEffect(() => {
@@ -264,6 +272,7 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
     try {
       const res = await generateExamples(item.card_id);
       setExamples(res.examples || []);
+      setExamplesModel(res.model || '');
       if (!res.examples || res.examples.length === 0) {
         setExamplesError('Empty — try again');
       }
@@ -283,6 +292,7 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
       const res = await generateNotes(item.card_id);
       setExamplesNotes(res.usage_notes || '');
       setExamplesSynonyms(res.synonyms || []);
+      setNotesModel(res.model || '');
       if (!res.usage_notes && (!res.synonyms || res.synonyms.length === 0)) {
         setNotesError('Empty — try again');
       }
@@ -512,6 +522,11 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
                 {examplesError}
               </div>
             )}
+            {examples && examples.length > 0 && (
+              <div style={{ fontWeight: 'bold', color: 'var(--text-primary)', fontSize: '1.15rem' }}>
+                Examples
+              </div>
+            )}
             {examples && examples.map((ex, i) => (
               <div key={i} style={{
                 borderBottom: i < examples.length - 1 ? '1px solid var(--border-light)' : 'none',
@@ -537,9 +552,12 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
                 </div>
               </div>
             ))}
+            {examples && examples.length > 0 && examplesModel && (
+              <ModelLabel model={examplesModel} label="model (examples)" style={{ marginTop: '-4px' }} />
+            )}
             {notesLoading && !examplesNotes && examplesSynonyms.length === 0 && (
               <div style={{ color: 'var(--text-secondary)', fontSize: '1.05rem', textAlign: 'center' }}>
-                Loading notes…
+                Generating analysis…
               </div>
             )}
             {notesError && !notesLoading && (
@@ -550,7 +568,7 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
             {!notesLoading && examplesNotes && (
               <div style={{ fontSize: '1.05rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
                 <div style={{ fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '2px', fontSize: '1.15rem' }}>
-                  Usage notes
+                  Analysis
                 </div>
                 <MarkdownText text={examplesNotes} />
               </div>
@@ -567,6 +585,9 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
                   </div>
                 ))}
               </div>
+            )}
+            {!notesLoading && (examplesNotes || examplesSynonyms.length > 0) && notesModel && (
+              <ModelLabel model={notesModel} label="model (analysis)" style={{ marginTop: '-4px' }} />
             )}
             {!examplesLoading && !notesLoading && ((examples || examplesError) || (examplesNotes || examplesSynonyms.length > 0 || notesError)) && (
               <button onClick={() => loadMore(true)} style={{ ...btnGrade, fontSize: '1rem', minHeight: '44px' }}>

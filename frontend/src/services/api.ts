@@ -144,7 +144,7 @@ export async function getCardReviewHistory(cardId: number, limit: number = 10) {
 
 // ============ GROQ SENTENCE + EXAMPLES API ============
 
-export async function generateSentence(language: string): Promise<{sentence_in_target: string, translation_in_russian: string}> {
+export async function generateSentence(language: string): Promise<{sentence_in_target: string, translation_in_russian: string, model?: string}> {
   const res = await api.post('/groq/sentence', { language });
   return res.data;
 }
@@ -166,6 +166,7 @@ export interface ExamplesResponse {
   examples: ExampleItem[];
   usage_notes: string;
   synonyms: ExampleSynonym[];
+  model?: string;
 }
 
 export async function generateExamples(cardId: number): Promise<ExamplesResponse> {
@@ -178,6 +179,7 @@ export interface NotesResponse {
   language: string;
   usage_notes: string;
   synonyms: ExampleSynonym[];
+  model?: string;
 }
 
 export async function generateNotes(cardId: number): Promise<NotesResponse> {

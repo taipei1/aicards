@@ -29,6 +29,7 @@ class SentenceRequest(BaseModel):
 class SentenceResponse(BaseModel):
     sentence_in_target: str
     translation_in_russian: str
+    model: str = ""
 
 
 class ExamplesRequest(BaseModel):
@@ -52,6 +53,7 @@ class ExamplesResponse(BaseModel):
     examples: list[ExampleItem]
     usage_notes: str = ""
     synonyms: list[SynonymItem] = []
+    model: str = ""
 
 
 @router.post("/sentence", response_model=SentenceResponse)
@@ -83,6 +85,7 @@ def generate_sentence(
         language=language,
         front_meaning=card.front,
         back_meaning=card.back,
+        hint=card.hint or "",
         db=db,
     )
 
@@ -95,6 +98,7 @@ def generate_sentence(
     return SentenceResponse(
         sentence_in_target=result["sentence_in_target"],
         translation_in_russian=result["translation_in_russian"],
+        model=result.get("model", ""),
     )
 
 
@@ -107,6 +111,7 @@ class NotesResponse(BaseModel):
     language: str
     usage_notes: str = ""
     synonyms: list[SynonymItem] = []
+    model: str = ""
 
 
 @router.post("/examples", response_model=ExamplesResponse)
@@ -145,6 +150,7 @@ def generate_examples(
         back_meaning=card.back,
         is_phrase=is_phrase,
         siblings=siblings,
+        hint=card.hint or "",
         db=db,
     )
 
@@ -160,6 +166,7 @@ def generate_examples(
         examples=result["examples"],
         usage_notes=result.get("usage_notes", ""),
         synonyms=result.get("synonyms", []),
+        model=result.get("model", ""),
     )
 
 
@@ -183,6 +190,7 @@ def generate_notes(
         word=card.front,
         language=card.language,
         back_meaning=card.back,
+        hint=card.hint or "",
         db=db,
     )
 
@@ -197,4 +205,5 @@ def generate_notes(
         language=card.language,
         usage_notes=result.get("usage_notes", ""),
         synonyms=result.get("synonyms", []),
+        model=result.get("model", ""),
     )

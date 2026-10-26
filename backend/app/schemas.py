@@ -1,6 +1,8 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
+
+from app.utils.text import normalize_spaces
 
 # ============ CARDS SCHEMAS ============
 
@@ -11,10 +13,34 @@ class CardCreate(BaseModel):
     tags: List[str] = Field(default_factory=list)
     language: str = Field(default="en", pattern="^(en|sk)$")
 
+    @field_validator("front", "back", "hint", mode="before")
+    @classmethod
+    def _normalize_text(cls, value):
+        return normalize_spaces(value) if isinstance(value, str) else value
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _normalize_tags(cls, value):
+        if not isinstance(value, list):
+            return value
+        return [t for t in (normalize_spaces(str(v)) for v in value) if t]
+
 class CardUpdate(BaseModel):
     back: Optional[str] = Field(None, max_length=500)
     hint: Optional[str] = Field(None, max_length=2000)
     tags: Optional[List[str]] = None
+
+    @field_validator("back", "hint", mode="before")
+    @classmethod
+    def _normalize_text(cls, value):
+        return normalize_spaces(value) if isinstance(value, str) else value
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _normalize_tags(cls, value):
+        if value is None or not isinstance(value, list):
+            return value
+        return [t for t in (normalize_spaces(str(v)) for v in value) if t]
 
 class CardResponse(BaseModel):
     id: int

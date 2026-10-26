@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { generateSentence } from '../services/api';
 import { speak, speakSlow } from '../utils/tts';
+import { ModelLabel } from '../components/ModelLabel';
 import { cardBox, btn, btnPrimary, select } from '../styles/theme';
 
 const LANG_MAP: Record<string, string> = {
@@ -17,6 +18,7 @@ export function SentencePage({ onNavigate }: SentencePageProps) {
   const [sentence, setSentence] = useState<{
     sentence_in_target: string;
     translation_in_russian: string;
+    model?: string;
   } | null>(null);
   const [flipped, setFlipped] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -166,7 +168,7 @@ export function SentencePage({ onNavigate }: SentencePageProps) {
           <div
             style={{
               textAlign: 'center',
-              marginBottom: '8px',
+              marginBottom: '4px',
               fontWeight: 'bold',
               fontSize: '0.85rem',
               color: 'var(--text-secondary)',
@@ -174,6 +176,11 @@ export function SentencePage({ onNavigate }: SentencePageProps) {
           >
             {directionLabel}
           </div>
+
+          <ModelLabel
+            model={sentence.model}
+            style={{ textAlign: 'center', marginBottom: '8px' }}
+          />
 
           <div style={cardBox} onClick={() => {
               const newFlipped = !flipped;
