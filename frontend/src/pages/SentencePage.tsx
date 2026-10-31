@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { generateSentence } from '../services/api';
 import { speak, speakSlow } from '../utils/tts';
 import { ModelLabel } from '../components/ModelLabel';
@@ -11,6 +11,23 @@ const LANG_MAP: Record<string, string> = {
   sk: 'sk',
 };
 
+// Keep two future sentences ready. Each queue slot is a promise that started
+// as soon as the previous sentence was shown, so Next usually resolves before
+// the click animation finishes.
+const PREFETCH_AHEAD = 2;
+
+interface SentenceData {
+  sentence_in_target: string;
+  translation_in_russian: string;
+  model?: string;
+}
+
+interface PrefetchOutcome {
+  ok: boolean;
+  data?: SentenceData;
+  error?: any;
+}
+
 interface SentencePageProps {
   onNavigate?: (page: string) => void;
   /** False while another tab is visible — pages stay mounted. */
@@ -19,41 +36,113 @@ interface SentencePageProps {
 
 export function SentencePage({ onNavigate, isVisible = true }: SentencePageProps) {
   const { language, setLanguage } = useLanguage();
-  const [sentence, setSentence] = useState<{
-    sentence_in_target: string;
-    translation_in_russian: string;
-    model?: string;
-  } | null>(null);
+  const [sentence, setSentence] = useState<SentenceData | null>(null);
   const [flipped, setFlipped] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [noCards, setNoCards] = useState(false);
   const [showFront, setShowFront] = useState(true);
 
+  // Promises, not finished objects: a slot counts as ready even while the
+  // request is still running. Next awaits the oldest slot instead of starting
+  // a duplicate request, and the queue is topped up immediately.
+  const queueRef = useRef<Promise<PrefetchOutcome>[]>([]);
+  // Bumped on language changes so responses for the old language are ignored.
+  const epochRef = useRef(0);
+  const languageRef = useRef(language);
+  const loadingRef = useRef(false);
+
+  const makePrefetch = useCallback((lang: string): Promise<PrefetchOutcome> => {
+    return generateSentence(lang).then(
+      (data): PrefetchOutcome => ({ ok: true, data }),
+      (err): PrefetchOutcome => ({ ok: false, error: err }),
+    );
+  }, []);
+
+  const fillQueue = useCallback((lang: string, target = PREFETCH_AHEAD) => {
+    while (queueRef.current.length < target) {
+      queueRef.current.push(makePrefetch(lang));
+    }
+  }, [makePrefetch]);
+
+  const showSentence = useCallback((data: SentenceData, lang: string) => {
+    setSentence(data);
+    const front = Math.random() < 0.5;
+    setShowFront(front);
+    // Only speak if target language is shown first
+    if (front) {
+      speak(data.sentence_in_target, LANG_MAP[lang]);
+    }
+  }, []);
+
+  const applyError = useCallback((err: any) => {
+    if (err?.response?.status === 404) {
+      setNoCards(true);
+      setSentence(null);
+      queueRef.current = [];
+    } else {
+      setError(err?.response?.data?.detail || 'Failed to generate sentence');
+    }
+  }, []);
+
   const handleGenerate = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     setError(null);
     setNoCards(false);
     setFlipped(false);
+
+    const lang = languageRef.current;
+    const epoch = epochRef.current;
+
     try {
-      const result = await generateSentence(language);
-      setSentence(result);
-      const front = Math.random() < 0.5;
-      setShowFront(front);
-      // Only speak if target language is shown first
-      if (front) {
-        speak(result.sentence_in_target, LANG_MAP[language]);
+      // Usually there is a prefetched sentence ready. On the very first call
+      // there is none, so start the visible sentence AND its two followers
+      // together: the first one is awaited, the other two fill the queue.
+      let nextPromise = queueRef.current.shift();
+      if (!nextPromise) {
+        nextPromise = makePrefetch(lang);
       }
-    } catch (err: any) {
-      if (err?.response?.status === 404) {
-        setNoCards(true);
+      fillQueue(lang, PREFETCH_AHEAD);
+
+      const outcome = await nextPromise;
+      if (epochRef.current !== epoch) return;
+      if (outcome.ok && outcome.data) {
+        showSentence(outcome.data, lang);
+        fillQueue(lang, PREFETCH_AHEAD);
       } else {
-        setError(err?.response?.data?.detail || 'Failed to generate sentence');
+        applyError(outcome.error);
       }
     } finally {
-      setLoading(false);
+      if (epochRef.current === epoch) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
     }
+  }, [applyError, fillQueue, makePrefetch, showSentence]);
+
+  // A language switch invalidates every queued/in-flight sentence. Clearing
+  // the queue also makes the first click generate a fresh trio.
+  useEffect(() => {
+    if (languageRef.current === language) return;
+    languageRef.current = language;
+    epochRef.current += 1;
+    queueRef.current = [];
+    loadingRef.current = false;
+    setLoading(false);
+    setSentence(null);
+    setFlipped(false);
+    setError(null);
+    setNoCards(false);
   }, [language]);
+
+  // If the page becomes visible again with a card on screen, top the queue up
+  // (it might have been consumed while another tab was open).
+  useEffect(() => {
+    if (!isVisible || !sentence) return;
+    fillQueue(languageRef.current, PREFETCH_AHEAD);
+  }, [isVisible, sentence, fillQueue]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
