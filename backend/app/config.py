@@ -31,6 +31,18 @@ class Settings(BaseSettings):
     omnirouter_chat_model: str = "tokenharbor/deepseek-v4.1-flash:free"
     omnirouter_embedding_model: str = "openrouter/openai/text-embedding-3-small"
 
+    # Active OmniRoute profile: "server" (omnirouter.* above) or "local"
+    # (omnirouter_local_* below). The Settings UI stores the same choice in DB.
+    omnirouter_provider: str = "server"
+
+    # Local OmniRoute profile. This is separate from the server profile so the
+    # user can keep both credentials and switch with one click. In Docker the
+    # host's OmniRoute is reachable as host.docker.internal.
+    omnirouter_local_base_url: str = "http://host.docker.internal:20128/v1"
+    omnirouter_local_api_key: str = "local"
+    omnirouter_local_chat_model: str = "fast_trans"
+    omnirouter_local_embedding_model: str = "openrouter/openai/text-embedding-3-small"
+
     # App password gate (single shared password, empty = no auth)
     app_password_hash: str = ""
     

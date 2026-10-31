@@ -314,12 +314,33 @@ export async function logout(): Promise<void> {
 
 // ============ LLM SETTINGS API ============
 
-export interface LLMSettings {
+export type LLMProvider = 'server' | 'local';
+
+export interface LLMProfile {
   base_url: string;
   chat_model: string;
   embedding_model: string;
   api_key_configured: boolean;
   api_key_hint: string;
+}
+
+export interface LLMSettings {
+  active_provider: LLMProvider;
+  server: LLMProfile;
+  local: LLMProfile;
+  // Compatibility: flat fields describe the active profile.
+  base_url: string;
+  chat_model: string;
+  embedding_model: string;
+  api_key_configured: boolean;
+  api_key_hint: string;
+}
+
+export interface LLMProfileUpdate {
+  base_url?: string;
+  api_key?: string;
+  chat_model?: string;
+  embedding_model?: string;
 }
 
 export async function getLLMSettings(): Promise<LLMSettings> {
@@ -328,6 +349,9 @@ export async function getLLMSettings(): Promise<LLMSettings> {
 }
 
 export async function updateLLMSettings(data: {
+  active_provider?: LLMProvider;
+  server?: LLMProfileUpdate;
+  local?: LLMProfileUpdate;
   base_url?: string;
   api_key?: string;
   chat_model?: string;
@@ -337,8 +361,10 @@ export async function updateLLMSettings(data: {
   return res.data;
 }
 
-export async function testLLMSettings(): Promise<{ ok: boolean; model?: string; latency_ms?: number; reply?: string; error?: string }> {
-  const res = await api.post('/settings/llm/test');
+export async function testLLMSettings(provider?: LLMProvider): Promise<{ ok: boolean; provider?: string; model?: string; latency_ms?: number; reply?: string; error?: string }> {
+  const res = await api.post('/settings/llm/test', null, {
+    params: provider ? { provider } : {},
+  });
   return res.data;
 }
 

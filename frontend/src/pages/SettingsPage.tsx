@@ -1,23 +1,52 @@
 import { useState, useEffect } from 'react';
 import { getLLMSettings, updateLLMSettings, testLLMSettings, getPrefs, updatePrefs } from '../services/api';
-import type { LLMSettings } from '../services/api';
+import type { LLMSettings, LLMProvider, LLMProfileUpdate } from '../services/api';
 import { applyAudioPrefs } from '../utils/tts';
 import { input, label, btnPrimary, btn } from '../styles/theme';
 
-const CHAT_PRESETS = ['tokenharbor/deepseek-v4.1-flash:free', 'vyceai/deepseek-v4.1', 'auto/cheap', 'auto/chat', 'auto/fast'];
+const CHAT_PRESETS = ['tokenharbor/deepseek-v4.1-flash:free', 'vyceai/deepseek-v4.1', 'fast_trans', 'auto/cheap', 'auto/chat', 'auto/fast'];
 const EMB_PRESETS = ['openrouter/openai/text-embedding-3-small', 'openrouter/openai/text-embedding-3-large'];
+
+type Provider = LLMProvider;
+
+interface ProfileForm {
+  baseUrl: string;
+  apiKey: string;
+  chatModel: string;
+  embModel: string;
+}
+
+const emptyProfile = (): ProfileForm => ({
+  baseUrl: '',
+  apiKey: '',
+  chatModel: '',
+  embModel: '',
+});
+
+function profilePayload(form: ProfileForm): LLMProfileUpdate {
+  return {
+    base_url: form.baseUrl.trim(),
+    ...(form.apiKey.trim() ? { api_key: form.apiKey.trim() } : {}),
+    chat_model: form.chatModel.trim(),
+    embedding_model: form.embModel.trim(),
+  };
+}
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<LLMSettings | null>(null);
-  const [baseUrl, setBaseUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [chatModel, setChatModel] = useState('');
-  const [embModel, setEmbModel] = useState('');
+  const [activeProvider, setActiveProvider] = useState<Provider>('server');
+  const [profiles, setProfiles] = useState<Record<Provider, ProfileForm>>({
+    server: emptyProfile(),
+    local: emptyProfile(),
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
+  const [testing, setTesting] = useState<Record<Provider, boolean>>({ server: false, local: false });
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
-  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<Provider, string | null>>({
+    server: null,
+    local: null,
+  });
 
   // Sound: on/off + volume. Stored in the backend so the choice follows the
   // user across devices, and applied to the live player immediately on save.
@@ -27,15 +56,30 @@ export function SettingsPage() {
   const [prefsMessage, setPrefsMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [audioTesting, setAudioTesting] = useState(false);
 
+  const applyLoadedSettings = (s: LLMSettings) => {
+    setSettings(s);
+    setActiveProvider(s.active_provider);
+    setProfiles({
+      server: {
+        baseUrl: s.server.base_url,
+        apiKey: '',
+        chatModel: s.server.chat_model,
+        embModel: s.server.embedding_model,
+      },
+      local: {
+        baseUrl: s.local.base_url,
+        apiKey: '',
+        chatModel: s.local.chat_model,
+        embModel: s.local.embedding_model,
+      },
+    });
+  };
+
   const load = async () => {
     setLoading(true);
     try {
       const s = await getLLMSettings();
-      setSettings(s);
-      setBaseUrl(s.base_url);
-      setChatModel(s.chat_model);
-      setEmbModel(s.embedding_model);
-      setApiKey('');
+      applyLoadedSettings(s);
     } catch {
       setMessage({ text: 'Failed to load settings', type: 'error' });
     }
@@ -50,6 +94,57 @@ export function SettingsPage() {
   };
 
   useEffect(() => { load(); }, []);
+
+  const updateProfileField = (provider: Provider, field: keyof ProfileForm, value: string) => {
+    setProfiles((prev) => ({
+      ...prev,
+      [provider]: { ...prev[provider], [field]: value },
+    }));
+    // A test result belongs to the values that were saved, not to new edits.
+    setTestResults((prev) => ({ ...prev, [provider]: null }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const s = await updateLLMSettings({
+        active_provider: activeProvider,
+        server: profilePayload(profiles.server),
+        local: profilePayload(profiles.local),
+      });
+      applyLoadedSettings(s);
+      setMessage({ text: '✓ Saved', type: 'success' });
+    } catch (err: any) {
+      setMessage({ text: err.response?.data?.detail || 'Save failed', type: 'error' });
+    }
+    setSaving(false);
+  };
+
+  const handleTest = async (provider: Provider) => {
+    setTesting((prev) => ({ ...prev, [provider]: true }));
+    setTestResults((prev) => ({ ...prev, [provider]: null }));
+    try {
+      const r = await testLLMSettings(provider);
+      if (r.ok) {
+        setTestResults((prev) => ({
+          ...prev,
+          [provider]: `✓ OK · ${r.provider ?? provider} · ${r.model ?? '?'} · ${r.latency_ms ?? 0}ms · reply: ${r.reply ?? ''}`,
+        }));
+      } else {
+        setTestResults((prev) => ({
+          ...prev,
+          [provider]: `✗ ${r.error || 'Test failed'}`,
+        }));
+      }
+    } catch (err: any) {
+      setTestResults((prev) => ({
+        ...prev,
+        [provider]: `✗ ${err.response?.data?.detail || 'Test failed'}`,
+      }));
+    }
+    setTesting((prev) => ({ ...prev, [provider]: false }));
+  };
 
   const handleSavePrefs = async () => {
     setPrefsSaving(true);
@@ -103,40 +198,139 @@ export function SettingsPage() {
     setAudioTesting(false);
   };
 
-  const handleSave = async () => {
-    setSaving(true);
-    setMessage(null);
-    try {
-      const s = await updateLLMSettings({
-        base_url: baseUrl.trim(),
-        // Send key only if typed — empty keeps the stored one
-        ...(apiKey.trim() ? { api_key: apiKey.trim() } : {}),
-        chat_model: chatModel.trim(),
-        embedding_model: embModel.trim(),
-      });
-      setSettings(s);
-      setApiKey('');
-      setMessage({ text: '✓ Saved', type: 'success' });
-    } catch (err: any) {
-      setMessage({ text: err.response?.data?.detail || 'Save failed', type: 'error' });
-    }
-    setSaving(false);
-  };
+  const renderProfile = (provider: Provider) => {
+    const form = profiles[provider];
+    const meta = settings?.[provider];
+    const isActive = activeProvider === provider;
+    const isServer = provider === 'server';
+    const testResult = testResults[provider];
 
-  const handleTest = async () => {
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const r = await testLLMSettings();
-      if (r.ok) {
-        setTestResult(`✓ OK · ${r.model} · ${r.latency_ms}ms · reply: ${r.reply}`);
-      } else {
-        setTestResult(`✗ ${r.error}`);
-      }
-    } catch (err: any) {
-      setTestResult(`✗ ${err.response?.data?.detail || 'Test failed'}`);
-    }
-    setTesting(false);
+    return (
+      <div
+        key={provider}
+        style={{
+          border: isActive ? '2px solid var(--text-primary)' : '2px solid var(--border-primary)',
+          padding: '12px',
+          borderRadius: '4px',
+          background: 'var(--bg-primary)',
+        }}
+      >
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+          <h4 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '0.95rem' }}>
+            {isServer ? 'Серверный OmniRoute' : 'Локальный OmniRoute'}
+          </h4>
+          {isActive ? (
+            <span style={{
+              fontSize: '0.72rem',
+              fontWeight: 'bold',
+              padding: '2px 6px',
+              borderRadius: '3px',
+              background: 'var(--text-primary)',
+              color: 'var(--bg-primary)',
+            }}>
+              Активен
+            </span>
+          ) : (
+            <button
+              onClick={() => setActiveProvider(provider)}
+              style={{ ...btn, padding: '4px 8px', fontSize: '0.75rem' }}
+            >
+              Использовать
+            </button>
+          )}
+        </div>
+
+        <div style={{ marginBottom: '10px', color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
+          {isServer
+            ? 'Серверный профиль OmniRoute. Хранится отдельно от локального.'
+            : 'Локальный профиль OmniRoute. В Docker укажи адрес, доступный контейнеру, например http://host.docker.internal:20128/v1.'}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div>
+            <label style={label}>Base URL</label>
+            <input
+              value={form.baseUrl}
+              onChange={(e) => updateProfileField(provider, 'baseUrl', e.target.value)}
+              placeholder={isServer ? 'http://91.184.253.167:20128/v1' : 'http://host.docker.internal:20128/v1'}
+              style={input}
+            />
+          </div>
+
+          <div>
+            <label style={label}>API key</label>
+            <input
+              type="password"
+              value={form.apiKey}
+              onChange={(e) => updateProfileField(provider, 'apiKey', e.target.value)}
+              placeholder={meta?.api_key_configured
+                ? `Saved ${meta.api_key_hint} — type new key to replace`
+                : 'Paste OmniRoute API key'}
+              style={input}
+              autoComplete="off"
+            />
+            <div style={{ marginTop: '2px', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+              {meta?.api_key_configured ? `Ключ сохранён: ${meta.api_key_hint}` : 'Ключ не задан'}
+            </div>
+          </div>
+
+          <div>
+            <label style={label}>Chat model</label>
+            <input
+              value={form.chatModel}
+              onChange={(e) => updateProfileField(provider, 'chatModel', e.target.value)}
+              placeholder={isServer ? 'tokenharbor/deepseek-v4.1-flash:free' : 'fast_trans'}
+              style={{ ...input, fontFamily: 'monospace', fontSize: '0.85rem' }}
+              list={`chat-presets-${provider}`}
+            />
+            <datalist id={`chat-presets-${provider}`}>
+              {CHAT_PRESETS.map((m) => <option key={m} value={m} />)}
+            </datalist>
+          </div>
+
+          <div>
+            <label style={label}>Embedding model</label>
+            <input
+              value={form.embModel}
+              onChange={(e) => updateProfileField(provider, 'embModel', e.target.value)}
+              placeholder="openrouter/openai/text-embedding-3-small"
+              style={{ ...input, fontFamily: 'monospace', fontSize: '0.85rem' }}
+              list={`emb-presets-${provider}`}
+            />
+            <datalist id={`emb-presets-${provider}`}>
+              {EMB_PRESETS.map((m) => <option key={m} value={m} />)}
+            </datalist>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginTop: '4px' }}>
+            <button
+              onClick={() => handleTest(provider)}
+              disabled={testing[provider]}
+              style={btn}
+            >
+              {testing[provider] ? 'Testing...' : 'Test'}
+            </button>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+              Проверяет сохранённые настройки
+            </span>
+          </div>
+
+          {testResult && (
+            <div style={{
+              padding: '8px',
+              borderRadius: '4px',
+              fontSize: '0.8rem',
+              fontFamily: 'monospace',
+              wordBreak: 'break-word',
+              background: testResult.startsWith('✓') ? 'var(--bg-success)' : 'var(--bg-danger)',
+              color: testResult.startsWith('✓') ? 'var(--text-success)' : 'var(--text-danger)',
+            }}>
+              {testResult}
+            </div>
+          )}
+        </div>
+      </div>
+    );
   };
 
   if (loading) {
@@ -158,93 +352,57 @@ export function SettingsPage() {
           LLM — OmniRoute gateway
         </h3>
         <div style={{ marginBottom: '12px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-          Все запросы к языковым моделям (предложения, вопросы) идут через твой OmniRoute-прокси.
-          {settings?.api_key_configured
-            ? <> Ключ сохранён ({settings.api_key_hint}). Чтобы заменить — вставь новый.</>
-            : <> Ключ не задан — вставь его ниже.</>}
+          Два профиля: серверный и локальный. Выбери активный, заполни URL, ключ и модели, затем сохрани.
+          Настройка общая для всех устройств.
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <div>
-            <label style={label}>API key</label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={settings?.api_key_configured ? `Saved ${settings.api_key_hint} — type new key to replace` : 'Paste OmniRoute API key'}
-              style={input}
-              autoComplete="off"
-            />
-          </div>
+        <div style={{
+          display: 'flex',
+          gap: '12px',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          marginBottom: '12px',
+          color: 'var(--text-primary)',
+          fontSize: '0.85rem',
+        }}>
+          {(['server', 'local'] as Provider[]).map((p) => (
+            <label key={p} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="llm-provider"
+                checked={activeProvider === p}
+                onChange={() => setActiveProvider(p)}
+              />
+              {p === 'server' ? 'Серверный' : 'Локальный'}
+            </label>
+          ))}
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            Активный: {activeProvider === 'server' ? 'серверный' : 'локальный'}
+          </span>
+        </div>
 
-          <div>
-            <label style={label}>Base URL</label>
-            <input
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="http://host.docker.internal:20128/v1"
-              style={input}
-            />
-          </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {renderProfile('server')}
+          {renderProfile('local')}
+        </div>
 
-          <div>
-            <label style={label}>Chat model</label>
-            <input
-              value={chatModel}
-              onChange={(e) => setChatModel(e.target.value)}
-              placeholder="auto/cheap"
-              style={{ ...input, fontFamily: 'monospace', fontSize: '0.85rem' }}
-              list="chat-presets"
-            />
-            <datalist id="chat-presets">
-              {CHAT_PRESETS.map((m) => <option key={m} value={m} />)}
-            </datalist>
-          </div>
-
-          <div>
-            <label style={label}>Embedding model</label>
-            <input
-              value={embModel}
-              onChange={(e) => setEmbModel(e.target.value)}
-              placeholder="openrouter/openai/text-embedding-3-small"
-              style={{ ...input, fontFamily: 'monospace', fontSize: '0.85rem' }}
-              list="emb-presets"
-            />
-            <datalist id="emb-presets">
-              {EMB_PRESETS.map((m) => <option key={m} value={m} />)}
-            </datalist>
-          </div>
-
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginTop: '4px' }}>
-            <button onClick={handleSave} disabled={saving} style={btnPrimary}>
-              {saving ? 'Saving...' : 'Save'}
-            </button>
-            <button onClick={handleTest} disabled={testing} style={btn}>
-              {testing ? 'Testing...' : 'Test connection'}
-            </button>
-            {message && (
-              <span style={{
-                color: message.type === 'success' ? 'var(--text-success)' : 'var(--text-danger)',
-                fontSize: '0.9rem',
-              }}>
-                {message.text}
-              </span>
-            )}
-          </div>
-
-          {testResult && (
-            <div style={{
-              padding: '8px',
-              borderRadius: '4px',
-              fontSize: '0.85rem',
-              fontFamily: 'monospace',
-              wordBreak: 'break-word',
-              background: testResult.startsWith('✓') ? 'var(--bg-success)' : 'var(--bg-danger)',
-              color: testResult.startsWith('✓') ? 'var(--text-success)' : 'var(--text-danger)',
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginTop: '12px' }}>
+          <button onClick={handleSave} disabled={saving} style={btnPrimary}>
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+          {message && (
+            <span style={{
+              color: message.type === 'success' ? 'var(--text-success)' : 'var(--text-danger)',
+              fontSize: '0.9rem',
             }}>
-              {testResult}
-            </div>
+              {message.text}
+            </span>
           )}
+        </div>
+
+        <div style={{ marginTop: '6px', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>
+          Активный профиль применяется сразу после сохранения. Для локального профиля backend должен
+          иметь сетевой доступ к указанному URL.
         </div>
       </div>
 
