@@ -243,7 +243,9 @@ export default function App() {
             fontSize: '0.85rem',
             fontWeight: 'bold',
             boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
-            cursor: 'pointer',
+            // Never intercept the click that unlocks audio; the window-level
+            // capture listener in tts.ts handles it.
+            pointerEvents: 'none',
           }}
         >
           🔊 Click anywhere to enable sound
