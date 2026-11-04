@@ -106,6 +106,34 @@ async def _edge_synth(
     return audio
 
 
+async def _edge_synth_with_retry(
+    text: str,
+    voice: str,
+    rate: str | None,
+    pitch: str | None,
+    attempts: int = 2,
+) -> bytes:
+    """Retry the sporadic "no audio" edge-tts failure once.
+
+    edge-tts occasionally closes the stream without any audio (transient
+    service hiccup / throttling). One retry normally succeeds and is far
+    faster than dropping straight into gTTS, which can take many seconds.
+    """
+    last: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return await asyncio.wait_for(
+                _edge_synth(text, voice, rate, pitch), timeout=8.0
+            )
+        except Exception as e:
+            last = e
+            print(f"[TTS] edge-tts attempt {attempt}/{attempts} failed: {e}")
+            if attempt < attempts:
+                await asyncio.sleep(0.2)
+    assert last is not None
+    raise last
+
+
 def _pitch_down(audio: bytes) -> bytes:
     """Lower gTTS output by GTTS_PITCH, keeping its duration."""
     ffmpeg = shutil.which("ffmpeg")
@@ -169,10 +197,10 @@ async def speak(
     audio = _cache_get(edge_key)
     if audio is None:
         try:
-            audio = await _edge_synth(text, edge_voice, rate, pitch)
+            audio = await _edge_synth_with_retry(text, edge_voice, rate, pitch)
             _cache_put(edge_key, audio)
         except Exception as e:
-            print(f"[TTS] edge-tts failed ({e}), falling back to gTTS")
+            print(f"[TTS] edge-tts failed after retry ({e}), falling back to gTTS")
             audio = None
 
     if audio is not None:
