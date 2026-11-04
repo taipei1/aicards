@@ -103,17 +103,20 @@ export function LanguagePage({ mode, onNavigate, isVisible = true }: Props) {
     refreshDue();
   }, [language, selectedTag, mode]);
 
-  // Warm the audio for the current and next two cards while the current one is
-  // still on screen. Without this the first word only starts downloading after
-  // the card mounts and is heard noticeably late.
+  // Warm the audio for the next few *unique* words while the current card is
+  // still on screen. The queue contains normal + reverse pairs of the same
+  // word, so slicing by position alone wastes prefetch slots on duplicates.
   useEffect(() => {
     if (!isVisible || items.length === 0) return;
-    const upcoming = items.slice(currentIndex, currentIndex + 3);
-    for (const it of upcoming) {
-      prefetchSpeech(
-        it.is_reverse ? it.back : it.front,
-        cardSpeechLang(it.language),
-      );
+    const seen = new Set<string>();
+    for (const it of items.slice(currentIndex, currentIndex + 8)) {
+      const text = it.is_reverse ? it.back : it.front;
+      const lang = cardSpeechLang(it.language);
+      const key = `${lang}\u0000${text}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      prefetchSpeech(text, lang);
+      if (seen.size >= 5) break;
     }
   }, [items, currentIndex, isVisible]);
 

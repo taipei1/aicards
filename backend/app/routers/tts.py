@@ -4,6 +4,7 @@ import asyncio
 import io
 import shutil
 import subprocess
+from collections import OrderedDict
 
 from gtts import gTTS
 
@@ -40,6 +41,25 @@ SLOW_RATE = "-35%"
 # switching the learner to a woman's voice mid-session. rubberband preserves
 # the duration, so the slow variant stays slow.
 GTTS_PITCH = 0.82
+
+# In-memory LRU of synthesized clips. edge-tts takes ~1 s per word and users
+# re-hear the same words across sessions/devices; 300 short clips is a few MB.
+_TTS_CACHE: OrderedDict[tuple, bytes] = OrderedDict()
+_TTS_CACHE_MAX = 300
+
+
+def _cache_get(key: tuple) -> bytes | None:
+    audio = _TTS_CACHE.get(key)
+    if audio is not None:
+        _TTS_CACHE.move_to_end(key)
+    return audio
+
+
+def _cache_put(key: tuple, audio: bytes) -> None:
+    _TTS_CACHE[key] = audio
+    _TTS_CACHE.move_to_end(key)
+    while len(_TTS_CACHE) > _TTS_CACHE_MAX:
+        _TTS_CACHE.popitem(last=False)
 
 
 def _resolve_voice(lang: str) -> tuple[str, str]:
@@ -145,30 +165,38 @@ async def speak(
 
     rate, pitch = _prosody(lang, slow)
 
-    try:
-        audio = await _edge_synth(text, edge_voice, rate, pitch)
-        return Response(
-            content=audio,
-            media_type="audio/mpeg",
-            headers={
-                "Content-Disposition": 'inline; filename="tts.mp3"',
-                "Cache-Control": "public, max-age=3600",
-                "X-TTS-Voice": edge_voice,
-            },
-        )
-    except Exception as e:
-        print(f"[TTS] edge-tts failed ({e}), falling back to gTTS")
+    edge_key = ("edge", edge_voice, rate, pitch, text)
+    audio = _cache_get(edge_key)
+    if audio is None:
+        try:
+            audio = await _edge_synth(text, edge_voice, rate, pitch)
+            _cache_put(edge_key, audio)
+        except Exception as e:
+            print(f"[TTS] edge-tts failed ({e}), falling back to gTTS")
+            audio = None
 
-    try:
-        audio = await asyncio.to_thread(_gtts_synth, text, gtts_lang, slow)
-        return Response(
-            content=audio,
-            media_type="audio/mpeg",
-            headers={
-                "Content-Disposition": 'inline; filename="tts.mp3"',
-                "Cache-Control": "public, max-age=3600",
-                "X-TTS-Voice": f"gtts:{gtts_lang}",
-            },
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"TTS failed: {str(e)}")
+    if audio is not None:
+        return _audio_response(audio, edge_voice)
+
+    gtts_key = ("gtts", gtts_lang, slow, text)
+    audio = _cache_get(gtts_key)
+    if audio is None:
+        try:
+            audio = await asyncio.to_thread(_gtts_synth, text, gtts_lang, slow)
+            _cache_put(gtts_key, audio)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"TTS failed: {str(e)}")
+
+    return _audio_response(audio, f"gtts:{gtts_lang}")
+
+
+def _audio_response(audio: bytes, voice: str) -> Response:
+    return Response(
+        content=audio,
+        media_type="audio/mpeg",
+        headers={
+            "Content-Disposition": 'inline; filename="tts.mp3"',
+            "Cache-Control": "public, max-age=3600",
+            "X-TTS-Voice": voice,
+        },
+    )

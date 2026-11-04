@@ -19,6 +19,45 @@ export function ttsUrl(text: string, lang: string, slow: boolean): string {
   return `${TTS_API}?text=${encodeURIComponent(text)}&lang=${encodeURIComponent(lang)}&slow=${slow}&v=${TTS_CACHE_VERSION}`;
 }
 
+const TTS_HTTP_CACHE = `aicards-tts-v${TTS_CACHE_VERSION}`;
+
+/** Persistent (across reloads) audio cache. The in-memory `cache` map below
+ *  only lives for one page session, so without this the first card of every
+ *  reload pays the full edge-tts synthesis time again. */
+async function readCachedClip(url: string): Promise<Blob | null> {
+  if (!('caches' in window)) return null;
+  try {
+    const cache = await caches.open(TTS_HTTP_CACHE);
+    const hit = await cache.match(url);
+    return hit ? await hit.blob() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function storeCachedClip(url: string, response: Response): Promise<void> {
+  if (!('caches' in window)) return;
+  try {
+    const cache = await caches.open(TTS_HTTP_CACHE);
+    await cache.put(url, response);
+  } catch {
+    /* quota exceeded / private mode — the in-memory cache still works */
+  }
+}
+
+async function cleanupOldTtsCaches(): Promise<void> {
+  if (!('caches' in window)) return;
+  try {
+    for (const name of await caches.keys()) {
+      if (name.startsWith('aicards-tts-v') && name !== TTS_HTTP_CACHE) {
+        await caches.delete(name);
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Language code for a card locale, shared by playback and prefetch so both
  *  sides produce the exact same cache key. */
 export function cardSpeechLang(locale: string): string {
@@ -89,6 +128,7 @@ export function applyAudioPrefs(next: { audio_enabled: boolean; audio_volume: nu
 /** Prefetch so the first card of a session does not play stale settings. */
 export function initTtsPrefs(): void {
   void loadPrefs(true);
+  void cleanupOldTtsCaches();
 }
 
 type Clip = { el: HTMLAudioElement; url: string };
@@ -138,18 +178,29 @@ async function loadClip(key: string, text: string, lang: string, slow: boolean):
   if (pending) return pending;
 
   const load = (async () => {
-    const res = await fetch(ttsUrl(text, lang, slow), { headers: tokenHeader() });
+    const url = ttsUrl(text, lang, slow);
 
-    // A reverse proxy or SPA fallback happily answers 200 with HTML — accepting
-    // that would hand the Audio element a non-audio blob, fail silently and drop
-    // us into the browser voice, which is a completely different one.
-    const contentType = (res.headers.get('content-type') || '').toLowerCase();
-    if (!contentType.includes('audio')) {
-      throw new Error(`TTS expected audio, got "${contentType || 'unknown'}"`);
+    // Cache API first: a word heard in an earlier session should start at once
+    // instead of waiting ~1 s for edge-tts again.
+    let blob = await readCachedClip(url);
+    if (blob && !blob.size) blob = null;
+
+    if (!blob) {
+      const res = await fetch(url, { headers: tokenHeader() });
+
+      // A reverse proxy or SPA fallback happily answers 200 with HTML — accepting
+      // that would hand the Audio element a non-audio blob, fail silently and drop
+      // us into the browser voice, which is a completely different one.
+      const contentType = (res.headers.get('content-type') || '').toLowerCase();
+      if (!contentType.includes('audio')) {
+        throw new Error(`TTS expected audio, got "${contentType || 'unknown'}"`);
+      }
+
+      const copy = res.clone();
+      blob = await res.blob();
+      if (!blob.size) throw new Error('TTS returned an empty body');
+      void storeCachedClip(url, copy);
     }
-
-    const blob = await res.blob();
-    if (!blob.size) throw new Error('TTS returned an empty body');
 
     const objectUrl = URL.createObjectURL(blob);
     const clip: Clip = { el: new Audio(objectUrl), url: objectUrl };
