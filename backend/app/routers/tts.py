@@ -119,11 +119,15 @@ async def _edge_synth_with_retry(
     service hiccup / throttling). One retry normally succeeds and is far
     faster than dropping straight into gTTS, which can take many seconds.
     """
+    # Long sentences legitimately take longer than a word (a 300-char line can
+    # take ~9 s on the first, cold edge-tts call). Scale the cap with length so
+    # we do not kill a valid synthesis and waste a whole retry.
+    timeout = min(30.0, 5.0 + len(text) * 0.03)
     last: Exception | None = None
     for attempt in range(1, attempts + 1):
         try:
             return await asyncio.wait_for(
-                _edge_synth(text, voice, rate, pitch), timeout=8.0
+                _edge_synth(text, voice, rate, pitch), timeout=timeout
             )
         except Exception as e:
             last = e
