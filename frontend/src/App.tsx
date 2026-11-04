@@ -21,6 +21,7 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [authed, setAuthed] = useState(false);
+  const [audioBlocked, setAudioBlocked] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem('theme');
@@ -31,6 +32,20 @@ export default function App() {
     // Pull the shared audio prefs once per load, so the very first card of a
     // session already plays at the saved volume / stays silent if muted.
     initTtsPrefs();
+  }, []);
+
+  // Autoplay is blocked until the user interacts with the page. tts.ts keeps
+  // the already-downloaded clip and retries it on the first gesture; show a
+  // hint so the initial silence does not look like a broken voiceover.
+  useEffect(() => {
+    const onBlocked = () => setAudioBlocked(true);
+    const onUnblocked = () => setAudioBlocked(false);
+    window.addEventListener('aicards-autoplay-blocked', onBlocked);
+    window.addEventListener('aicards-autoplay-unblocked', onUnblocked);
+    return () => {
+      window.removeEventListener('aicards-autoplay-blocked', onBlocked);
+      window.removeEventListener('aicards-autoplay-unblocked', onUnblocked);
+    };
   }, []);
 
   // Check existing token on load — password is only asked when there is none
@@ -211,6 +226,29 @@ export default function App() {
           {p === 'settings' && <SettingsPage />}
         </div>
       ))}
+
+      {audioBlocked && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            bottom: '16px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1000,
+            background: 'var(--text-primary)',
+            color: 'var(--bg-primary)',
+            padding: '10px 14px',
+            borderRadius: '6px',
+            fontSize: '0.85rem',
+            fontWeight: 'bold',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+            cursor: 'pointer',
+          }}
+        >
+          🔊 Click anywhere to enable sound
+        </div>
+      )}
     </div>
   );
 }

@@ -146,12 +146,68 @@ let currentClaimAt = 0;
 /** An identical request inside this window is treated as the same utterance. */
 const REPEAT_GUARD_MS = 700;
 
+/** A clip whose play() was blocked by the browser's autoplay policy. It is
+ *  already downloaded; the first user gesture retries it instead of switching
+ *  to the Web Speech fallback (which is a different, often female voice). */
+let pendingAutoplay: { clip: Clip; key: string } | null = null;
+let autoplayUnlockBound = false;
+
+function cancelAutoplayRetry(): void {
+  const hadPending = pendingAutoplay !== null;
+  pendingAutoplay = null;
+  if (autoplayUnlockBound) {
+    window.removeEventListener('pointerdown', retryBlockedAutoplay, true);
+    window.removeEventListener('keydown', retryBlockedAutoplay, true);
+    window.removeEventListener('touchstart', retryBlockedAutoplay, true);
+    autoplayUnlockBound = false;
+  }
+  if (hadPending) {
+    window.dispatchEvent(new Event('aicards-autoplay-unblocked'));
+  }
+}
+
+function retryBlockedAutoplay(): void {
+  const pending = pendingAutoplay;
+  cancelAutoplayRetry();
+  if (!pending || currentKey !== pending.key) return;
+  const { clip, key } = pending;
+  clip.el.currentTime = 0;
+  clip.el.volume = audioPrefs().volume;
+  clip.el.onended = () => {
+    if (currentKey === key) {
+      currentKey = null;
+      currentClaimAt = 0;
+    }
+  };
+  void clip.el.play().catch((e) => {
+    console.warn('TTS retry after gesture failed:', e);
+    if (currentKey === key) {
+      currentKey = null;
+      currentClaimAt = 0;
+    }
+  });
+}
+
+function armAutoplayRetry(clip: Clip, key: string): void {
+  cancelAutoplayRetry();
+  pendingAutoplay = { clip, key };
+  window.dispatchEvent(new Event('aicards-autoplay-blocked'));
+  if (autoplayUnlockBound) return;
+  // Capture phase: a click on the card's flip button or anywhere else must
+  // unlock playback before that click's own handler runs.
+  window.addEventListener('pointerdown', retryBlockedAutoplay, true);
+  window.addEventListener('keydown', retryBlockedAutoplay, true);
+  window.addEventListener('touchstart', retryBlockedAutoplay, true);
+  autoplayUnlockBound = true;
+}
+
 function tokenHeader(): Record<string, string> {
   const token = localStorage.getItem('aicards_token');
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 function evict(key: string): void {
+  if (pendingAutoplay?.key === key) cancelAutoplayRetry();
   const clip = cache.get(key);
   if (!clip) return;
   clip.el.pause();
@@ -160,6 +216,7 @@ function evict(key: string): void {
 }
 
 function stopCurrent(): void {
+  cancelAutoplayRetry();
   if (currentKey === null) return;
   const clip = cache.get(currentKey);
   if (clip) {
@@ -254,8 +311,9 @@ async function playWithAuth(key: string, text: string, lang: string, slow: boole
   currentKey = key;
   currentClaimAt = now;
 
+  let clip: Clip | null = null;
   try {
-    const clip = await loadClip(key, text, lang, slow);
+    clip = await loadClip(key, text, lang, slow);
 
     // No pause() here: interrupting our own pending play() would reject it with
     // AbortError and make us fall back to a second, overlapping voice.
@@ -273,6 +331,14 @@ async function playWithAuth(key: string, text: string, lang: string, slow: boole
     };
     return true;
   } catch (e) {
+    // Browsers block autoplay until the user interacts with the page. The mp3
+    // is already loaded, so keep it and start it on the first click/keypress —
+    // do NOT hand this to the Web Speech fallback, which is another voice.
+    if (clip && (e as DOMException)?.name === 'NotAllowedError') {
+      armAutoplayRetry(clip, key);
+      return true;
+    }
+
     console.warn('TTS failed:', e);
     if (currentKey === key) {
       currentKey = null;
