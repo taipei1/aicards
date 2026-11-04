@@ -53,7 +53,18 @@ ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" << 'CMDS'
   set -euo pipefail
   cd /home/azureuser/aicards
 
+  # The backend image expands to ~2 GB on disk. Without this check a full disk
+  # makes `docker load` fail halfway — and the old container silently keeps
+  # running the previous image while the deploy says "done".
+  avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+  if [ "$avail_kb" -lt 4194304 ]; then
+    echo "❌ Мало места на сервере: $((avail_kb / 1024)) MB свободно, нужно ~4 GB."
+    echo "   Очисти: docker image prune -af && docker builder prune -af"
+    exit 1
+  fi
+
   sg docker -c "
+    set -e
     echo '   Загрузка образов...'
     gunzip -c aicards-frontend.tar.gz | docker load
     gunzip -c aicards-backend.tar.gz  | docker load
@@ -65,6 +76,8 @@ ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" << 'CMDS'
     echo '✅ Готово!'
     docker ps --format 'table {{.Names}}\t{{.Status}}'
   "
+
+  rm -f aicards-frontend.tar.gz aicards-backend.tar.gz
 CMDS
 
 echo ""
