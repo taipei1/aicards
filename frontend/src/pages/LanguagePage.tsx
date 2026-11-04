@@ -4,7 +4,7 @@ import {
   deleteCard, logReview, logReverseReview, updateCard,
 } from '../services/api';
 import { CardDisplay } from '../components/CardDisplay';
-import { stopSpeaking } from '../utils/tts';
+import { stopSpeaking, prefetchSpeech, cardSpeechLang } from '../utils/tts';
 import { useLanguage } from '../context/LanguageContext';
 import { normalizeSpaces, trimSpaces } from '../utils/text';
 import type { Card, QueueItem } from '../types';
@@ -102,6 +102,20 @@ export function LanguagePage({ mode, onNavigate, isVisible = true }: Props) {
     loadItems();
     refreshDue();
   }, [language, selectedTag, mode]);
+
+  // Warm the audio for the current and next two cards while the current one is
+  // still on screen. Without this the first word only starts downloading after
+  // the card mounts and is heard noticeably late.
+  useEffect(() => {
+    if (!isVisible || items.length === 0) return;
+    const upcoming = items.slice(currentIndex, currentIndex + 3);
+    for (const it of upcoming) {
+      prefetchSpeech(
+        it.is_reverse ? it.back : it.front,
+        cardSpeechLang(it.language),
+      );
+    }
+  }, [items, currentIndex, isVisible]);
 
   const handleGrade = useCallback(async (rating: 1 | 2 | 3 | 4, timeSpent: number) => {
     const item = items[currentIndex];

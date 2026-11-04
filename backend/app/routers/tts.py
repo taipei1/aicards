@@ -2,18 +2,20 @@ from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import Response
 import asyncio
 import io
+import shutil
+import subprocess
 
 from gtts import gTTS
 
 router = APIRouter(prefix="/api/tts", tags=["tts"])
 
 # Deep male voices with per-voice prosody. English / Slovak / Russian.
-# Note: ru-RU-DmitryNeural rejects any rate/pitch tweak (edge-tts answers
-# "No audio was received"), so it is called plain.
+# edge-tts must be >= 7.3.0: 7.2.x still sends the v1 Sec-MS-GEC token, which
+# Microsoft now rejects with 403 (every request silently fell back to gTTS).
 EDGE_VOICES = {
-    "en": ("en-US-GuyNeural", "-8%", "-12Hz"),
-    "sk": ("sk-SK-LukasNeural", "-8%", "-12Hz"),
-    "ru": ("ru-RU-DmitryNeural", None, None),
+    "en": ("en-US-GuyNeural", "-8%", "-16Hz"),
+    "sk": ("sk-SK-LukasNeural", "-8%", "-16Hz"),
+    "ru": ("ru-RU-DmitryNeural", "-8%", "-16Hz"),
 }
 
 # gTTS fallback — no voice selection, used only if edge-tts is unreachable.
@@ -33,6 +35,12 @@ GTTS_LANG_MAP = {
 # low male voice rather than a neutral synthetic one.
 SLOW_RATE = "-35%"
 
+# gTTS has a single (female-sounding) voice per language. If edge-tts is down,
+# drop it ~18% in pitch so the fallback still sounds male and low instead of
+# switching the learner to a woman's voice mid-session. rubberband preserves
+# the duration, so the slow variant stays slow.
+GTTS_PITCH = 0.82
+
 
 def _resolve_voice(lang: str) -> tuple[str, str]:
     """Return (edge_voice, gtts_lang) for a language code."""
@@ -50,7 +58,7 @@ def _prosody(lang: str, slow: bool) -> tuple[str | None, str | None]:
     if code.startswith("sk"):
         _, rate, pitch = EDGE_VOICES["sk"]
     elif code.startswith("ru"):
-        return None, None
+        _, rate, pitch = EDGE_VOICES["ru"]
     else:
         _, rate, pitch = EDGE_VOICES["en"]
     if slow:
@@ -58,7 +66,9 @@ def _prosody(lang: str, slow: bool) -> tuple[str | None, str | None]:
     return rate, pitch
 
 
-async def _edge_synth(text: str, voice: str, rate: str | None, pitch: str | None) -> bytes:
+async def _edge_synth(
+    text: str, voice: str, rate: str | None, pitch: str | None
+) -> bytes:
     import edge_tts
 
     kwargs: dict = {}
@@ -76,11 +86,46 @@ async def _edge_synth(text: str, voice: str, rate: str | None, pitch: str | None
     return audio
 
 
+def _pitch_down(audio: bytes) -> bytes:
+    """Lower gTTS output by GTTS_PITCH, keeping its duration."""
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return audio
+    try:
+        proc = subprocess.run(
+            [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                "pipe:0",
+                "-filter:a",
+                f"rubberband=pitch={GTTS_PITCH}",
+                "-f",
+                "mp3",
+                "pipe:1",
+            ],
+            input=audio,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30,
+        )
+        if proc.returncode != 0 or not proc.stdout:
+            err = proc.stderr.decode(errors="ignore")[:200]
+            print(f"[TTS] pitch shift failed ({err})")
+            return audio
+        return proc.stdout
+    except Exception as e:
+        print(f"[TTS] pitch shift failed ({e})")
+        return audio
+
+
 def _gtts_synth(text: str, lang: str, slow: bool) -> bytes:
     buf = io.BytesIO()
     tts = gTTS(text=text, lang=lang, slow=slow)
     tts.write_to_fp(buf)
-    return buf.getvalue()
+    return _pitch_down(buf.getvalue())
 
 
 @router.get("/speak")

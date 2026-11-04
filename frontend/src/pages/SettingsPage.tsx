@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getLLMSettings, updateLLMSettings, testLLMSettings, getPrefs, updatePrefs } from '../services/api';
 import type { LLMSettings, LLMProvider, LLMProfileUpdate } from '../services/api';
-import { applyAudioPrefs } from '../utils/tts';
+import { applyAudioPrefs, ttsUrl } from '../utils/tts';
 import { input, label, btnPrimary, btn } from '../styles/theme';
 
 const CHAT_PRESETS = ['tokenharbor/deepseek-v4.1-flash:free', 'vyceai/deepseek-v4.1', 'fast_trans', 'auto/cheap', 'auto/chat', 'auto/fast'];
@@ -174,10 +174,9 @@ export function SettingsPage() {
     const text = 'This is the sound level';
     try {
       const token = localStorage.getItem('aicards_token');
-      const res = await fetch(
-        `/api/tts/speak?text=${encodeURIComponent(text)}&lang=en&slow=false`,
-        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
-      );
+      const res = await fetch(ttsUrl(text, 'en', false), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       if (!res.ok || !(res.headers.get('content-type') || '').includes('audio')) throw new Error('no audio');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);

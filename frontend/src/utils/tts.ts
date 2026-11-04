@@ -11,6 +11,20 @@ const TTS_API = '/api/tts/speak';
 const PREFS_API = '/api/settings/prefs';
 const PREFS_CACHE_KEY = 'aicards_audio_prefs';
 
+/** Bump when the backend voice changes: it busts both the browser HTTP cache
+ *  (the endpoint is cached for an hour) and our in-memory clip keys. */
+export const TTS_CACHE_VERSION = 2;
+
+export function ttsUrl(text: string, lang: string, slow: boolean): string {
+  return `${TTS_API}?text=${encodeURIComponent(text)}&lang=${encodeURIComponent(lang)}&slow=${slow}&v=${TTS_CACHE_VERSION}`;
+}
+
+/** Language code for a card locale, shared by playback and prefetch so both
+ *  sides produce the exact same cache key. */
+export function cardSpeechLang(locale: string): string {
+  return locale === 'sk' ? 'sk' : locale === 'en' ? 'en' : 'en-US';
+}
+
 type AudioPrefs = { enabled: boolean; volume: number };
 /** Default: full volume. The old code played every word at element volume 1.0. */
 const DEFAULT_PREFS: AudioPrefs = { enabled: true, volume: 1 };
@@ -124,8 +138,7 @@ async function loadClip(key: string, text: string, lang: string, slow: boolean):
   if (pending) return pending;
 
   const load = (async () => {
-    const url = `${TTS_API}?text=${encodeURIComponent(text)}&lang=${encodeURIComponent(lang)}&slow=${slow}`;
-    const res = await fetch(url, { headers: tokenHeader() });
+    const res = await fetch(ttsUrl(text, lang, slow), { headers: tokenHeader() });
 
     // A reverse proxy or SPA fallback happily answers 200 with HTML — accepting
     // that would hand the Audio element a non-audio blob, fail silently and drop
@@ -218,8 +231,20 @@ async function playWithAuth(key: string, text: string, lang: string, slow: boole
   }
 }
 
+function clipKey(text: string, lang: string, slow: boolean): string {
+  return `${slow ? 's' : 'f'}:v${TTS_CACHE_VERSION}:${text}:${lang}`;
+}
+
+/** Warm the audio cache without playing anything (the next card's word). */
+export function prefetchSpeech(text: string, lang: string = 'en-US'): void {
+  if (!text) return;
+  const prefs = audioPrefs();
+  if (!prefs.enabled || prefs.volume <= 0) return;
+  void loadClip(clipKey(text, lang, false), text, lang, false).catch(() => {});
+}
+
 export async function speak(text: string, lang: string = 'en-US'): Promise<void> {
-  const started = await playWithAuth(`f:${text}:${lang}`, text, lang, false);
+  const started = await playWithAuth(clipKey(text, lang, false), text, lang, false);
   if (!started) {
     // Nothing is playing from the backend, so the fallback is safe.
     stopCurrent();
@@ -228,7 +253,7 @@ export async function speak(text: string, lang: string = 'en-US'): Promise<void>
 }
 
 export async function speakSlow(text: string, lang: string = 'en-US'): Promise<void> {
-  const started = await playWithAuth(`s:${text}:${lang}`, text, lang, true);
+  const started = await playWithAuth(clipKey(text, lang, true), text, lang, true);
   if (!started) {
     stopCurrent();
     fallbackSpeakSlow(text, lang);

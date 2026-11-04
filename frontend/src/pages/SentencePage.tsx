@@ -51,6 +51,11 @@ export function SentencePage({ onNavigate, isVisible = true }: SentencePageProps
   const epochRef = useRef(0);
   const languageRef = useRef(language);
   const loadingRef = useRef(false);
+  // Mirrors `flipped` so the global key handler always sees the current side.
+  const flippedRef = useRef(false);
+  // The sentence is auto-spoken at most once: on appear if the target side is
+  // shown, or on the first flip that reveals it. Repeats are button/R only.
+  const autoSpokenRef = useRef(false);
 
   const makePrefetch = useCallback((lang: string): Promise<PrefetchOutcome> => {
     return generateSentence(lang).then(
@@ -69,11 +74,30 @@ export function SentencePage({ onNavigate, isVisible = true }: SentencePageProps
     setSentence(data);
     const front = Math.random() < 0.5;
     setShowFront(front);
+    flippedRef.current = false;
+    setFlipped(false);
+    autoSpokenRef.current = false;
     // Only speak if target language is shown first
     if (front) {
+      autoSpokenRef.current = true;
       speak(data.sentence_in_target, LANG_MAP[lang]);
     }
   }, []);
+
+  const handleFlip = useCallback(() => {
+    if (!sentence) return;
+    const next = !flippedRef.current;
+    flippedRef.current = next;
+    setFlipped(next);
+
+    // Speak only the first time this sentence's target side is revealed.
+    // Flipping back and forth afterwards stays silent; Replay/Slow handle that.
+    const revealingTarget = next ? !showFront : showFront;
+    if (revealingTarget && !autoSpokenRef.current) {
+      autoSpokenRef.current = true;
+      speak(sentence.sentence_in_target, LANG_MAP[language]);
+    }
+  }, [sentence, showFront, language]);
 
   const applyError = useCallback((err: any) => {
     if (err?.response?.status === 404) {
@@ -91,6 +115,7 @@ export function SentencePage({ onNavigate, isVisible = true }: SentencePageProps
     setLoading(true);
     setError(null);
     setNoCards(false);
+    flippedRef.current = false;
     setFlipped(false);
 
     const lang = languageRef.current;
@@ -130,6 +155,8 @@ export function SentencePage({ onNavigate, isVisible = true }: SentencePageProps
     epochRef.current += 1;
     queueRef.current = [];
     loadingRef.current = false;
+    flippedRef.current = false;
+    autoSpokenRef.current = false;
     setLoading(false);
     setSentence(null);
     setFlipped(false);
@@ -149,14 +176,7 @@ export function SentencePage({ onNavigate, isVisible = true }: SentencePageProps
       if (!isVisible || hasModifier(e) || isTypingTarget(e.target)) return;
       if (e.key === ' ' || e.key === 'Space') {
         e.preventDefault();
-        if (sentence) {
-          const newFlipped = !flipped;
-          setFlipped(newFlipped);
-          // Speak if newly revealed side is the target language
-          if ((newFlipped && !showFront) || (!newFlipped && showFront)) {
-            speak(sentence.sentence_in_target, LANG_MAP[language]);
-          }
-        }
+        handleFlip();
       } else if (e.key === 'n' || e.key === 'N') {
         if (!loading) handleGenerate();
       } else if (e.key === 'r' || e.key === 'R') {
@@ -167,7 +187,7 @@ export function SentencePage({ onNavigate, isVisible = true }: SentencePageProps
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [sentence, language, loading, handleGenerate, isVisible]);
+  }, [sentence, language, loading, handleGenerate, handleFlip, isVisible]);
 
   const directionLabel = (() => {
     if (!sentence) return '';
@@ -276,13 +296,7 @@ export function SentencePage({ onNavigate, isVisible = true }: SentencePageProps
             style={{ textAlign: 'center', marginBottom: '8px' }}
           />
 
-          <div style={cardBox} onClick={() => {
-              const newFlipped = !flipped;
-              setFlipped(newFlipped);
-              if ((newFlipped && !showFront) || (!newFlipped && showFront)) {
-                speak(sentence.sentence_in_target, LANG_MAP[language]);
-              }
-            }}>
+          <div style={cardBox} onClick={handleFlip}>
             <span
               style={{
                 fontSize: '1.3rem',

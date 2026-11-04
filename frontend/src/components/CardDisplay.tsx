@@ -1,20 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
 import type { QueueItem } from '../types';
-import { speak, speakSlow, stopSpeaking } from '../utils/tts';
+import { speak, speakSlow, stopSpeaking, cardSpeechLang } from '../utils/tts';
 import { generateExamples, generateNotes } from '../services/api';
 import type { ExampleItem, ExampleSynonym } from '../services/api';
 import { ModelLabel } from './ModelLabel';
 import { hasModifier, isTypingTarget } from '../utils/keyboard';
 import { btnGrade, cardBox, tagStyle } from '../styles/theme';
 
-const LANG_MAP: Record<string, string> = {
-  en: 'en',
-  sk: 'sk',
-};
-
 function lang(locale: string): string {
-  return LANG_MAP[locale] || 'en-US';
+  return cardSpeechLang(locale);
 }
 
 interface CardDisplayProps {
@@ -90,8 +85,7 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
   const extraSecondsRef = useRef(0);   // seconds added by pressing "More"
   const timerTotalRef = useRef(30);    // total countdown length for this card
   const moreOpenRef = useRef(false);   // pause the countdown while More is open
-  const speakTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const flipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showBackRef = useRef(false);   // mirrors showBack for the flip handler
 
   // Typing mode
   const [typingMode, setTypingMode] = useState(false);
@@ -119,6 +113,7 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
     stopSpeaking();
 
     setTimer(30);
+    showBackRef.current = false;
     setShowBack(false);
     startTimeRef.current = Date.now();
     extraSecondsRef.current = 0;
@@ -128,14 +123,12 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
     // following card forever — the card looks hung and the grade is frozen.
     moreOpenRef.current = false;
 
-    // Must be cleared on cleanup and on manual interaction: otherwise the
-    // delayed auto-speak lands on top of a word the user just clicked.
-    const speakTimer = setTimeout(() => {
-      if (!item.is_reverse) {
-        speak(item.front, lang(item.language));
-      }
-    }, 300);
-    speakTimerRef.current = speakTimer;
+    // Start as soon as the card is mounted: the old 300 ms delay plus the
+    // TTS fetch made the word arrive long after the card was readable. speak()
+    // dedupes repeat calls itself, so a quick manual replay cannot double-play.
+    if (!item.is_reverse) {
+      void speak(item.front, lang(item.language));
+    }
 
     timerRef.current = setInterval(() => {
       // Paused (not counted down) while the More panel is open — but wall time
@@ -152,9 +145,6 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
     }, 1000);
 
     return () => {
-      clearTimeout(speakTimer);
-      speakTimerRef.current = null;
-      if (flipTimerRef.current) clearTimeout(flipTimerRef.current);
       stopSpeaking();
       if (timerRef.current) clearInterval(timerRef.current);
     };
@@ -164,6 +154,7 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
     setTypingMode(false);
     setInputValue('');
     setTypingResult(null);
+    showBackRef.current = false;
     setShowBack(false);
     setShowExamples(false);
     setExamples(null);
@@ -181,12 +172,7 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
     }
   }, [typingMode]);
 
-  // Any manual playback cancels the pending auto-speak for this card
   const manualSpeak = useCallback((text: string, slow: boolean) => {
-    if (speakTimerRef.current) {
-      clearTimeout(speakTimerRef.current);
-      speakTimerRef.current = null;
-    }
     if (slow) speakSlow(text, lang(item.language));
     else speak(text, lang(item.language));
   }, [item.language]);
@@ -201,13 +187,13 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
 
   // On flip: for reverse cards, speak the target language word (item.back)
   const handleFlip = useCallback(() => {
-    setShowBack((prev) => {
-      if (!prev && item.is_reverse) {
-        const t = setTimeout(() => speak(item.back, lang(item.language)), 100);
-        flipTimerRef.current = t;
-      }
-      return !prev;
-    });
+    const next = !showBackRef.current;
+    showBackRef.current = next;
+    setShowBack(next);
+    // No timer: the word should start with the flip, not 100 ms after it.
+    if (next && item.is_reverse) {
+      void speak(item.back, lang(item.language));
+    }
   }, [item.is_reverse, item.back, item.language]);
 
   const getTimeSpent = () => {
