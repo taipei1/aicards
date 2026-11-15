@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from sqlalchemy import text
+from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
 from app.database import engine, Base
@@ -9,6 +10,8 @@ from app.routers import cards, reviews, obsidian, stats, tts, groq
 from app.routers import settings as settings_router
 from app.routers import auth
 from app.routers import translate
+from app.routers import phrases
+from app.services.phrase_service import phrase_service
 
 # The embeddings column needs pgvector, so the extension must exist BEFORE
 # create_all — otherwise a fresh database fails to create note_embeddings.
@@ -30,8 +33,10 @@ async def lifespan(app: FastAPI):
     # Startup
     print("🚀 SRS Application starting...")
     _ensure_vector_extension()
+    phrase_service.start()
     yield
     # Shutdown
+    phrase_service.stop()
     print("🛑 SRS Application shutting down...")
 
 app = FastAPI(
@@ -63,7 +68,10 @@ async def auth_gate(request, call_next):
             path.startswith(p) for p in AUTH_FREE_PREFIXES
         )
         if not allowed:
-            if not auth.token_is_valid(request):
+            # token_is_valid performs a blocking DB query. Calling it directly
+            # from this async middleware blocked the event loop for the whole
+            # request (one stale pooled connection = every request hangs).
+            if not await run_in_threadpool(auth.token_is_valid, request):
                 from starlette.responses import JSONResponse
                 return JSONResponse({"detail": "Not authenticated"}, status_code=401)
     return await call_next(request)
@@ -76,6 +84,7 @@ app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.include_router(tts.router, prefix="", tags=["tts"])
 app.include_router(groq.router, prefix="/api/groq", tags=["groq"])
 app.include_router(translate.router, prefix="/api/translate", tags=["translate"])
+app.include_router(phrases.router, prefix="/api/phrases", tags=["phrases"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["settings"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 

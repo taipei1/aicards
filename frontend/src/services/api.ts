@@ -50,19 +50,22 @@ api.interceptors.response.use(
 export async function getCardsDue(language: string, tag?: string, limit: number = 20): Promise<QueueItem[]> {
   const params: Record<string, any> = { language, limit };
   if (tag) params.tag = tag;
-  const res = await api.get('/cards/due', { params });
+  // The queue must not hang forever on a stuck connection: fail in bounded
+  // time so the UI can offer Retry.
+  const res = await api.get('/cards/due', { params, timeout: 30000 });
   return res.data;
 }
 
 export async function getCardsByTag(language: string, tag: string): Promise<Card[]> {
-  const res = await api.get('/cards/by-tag', { params: { language, tag } });
+  // Emergency mode loads the whole tag, which can be large.
+  const res = await api.get('/cards/by-tag', { params: { language, tag }, timeout: 60000 });
   return res.data;
 }
 
 export async function getAllTags(language?: string): Promise<string[]> {
   const params: Record<string, any> = {};
   if (language) params.language = language;
-  const res = await api.get('/cards/tags', { params });
+  const res = await api.get('/cards/tags', { params, timeout: 30000 });
   return res.data;
 }
 
@@ -187,6 +190,40 @@ export async function generateNotes(cardId: number): Promise<NotesResponse> {
   return res.data;
 }
 
+// ============ PHRASE MODE API ============
+
+export interface Phrase {
+  card_id: number;
+  phrase: string;
+  translation: string;
+  target_spans: string[];
+  translation_spans: string[];
+  model?: string;
+}
+
+export interface PhrasesResponse {
+  phrases: Phrase[];
+  pending: number[];
+}
+
+export async function ensurePhrases(
+  cardIds: number[],
+  opts: { language: string; tag?: string; prefetchNext?: boolean }
+): Promise<PhrasesResponse> {
+  const res = await api.post('/phrases/ensure', {
+    card_ids: cardIds,
+    language: opts.language,
+    tag: opts.tag,
+    prefetch_next: opts.prefetchNext !== false,
+  });
+  return res.data;
+}
+
+export async function getPhrases(cardIds: number[]): Promise<PhrasesResponse> {
+  const res = await api.post('/phrases/status', { card_ids: cardIds });
+  return res.data;
+}
+
 // ============ OBSIDIAN API ============
 
 export async function syncObsidian(): Promise<{ synced: number; updated: number; total: number }> {
@@ -268,7 +305,7 @@ export async function getDueCounts(language?: string, tag?: string): Promise<Rec
   const params: Record<string, any> = {};
   if (language) params.language = language;
   if (tag) params.tag = tag;
-  const res = await api.get('/cards/due-counts', { params });
+  const res = await api.get('/cards/due-counts', { params, timeout: 30000 });
   const data = res.data;
   if (!data || typeof data !== 'object') return {};
   // With language given the backend returns a single object — normalize shape

@@ -5,11 +5,27 @@ from sqlalchemy.orm import sessionmaker
 from app.config import settings
 
 # Engine
+#
+# The app talks to a remote Azure PostgreSQL, so a pooled connection can go
+# stale between requests. Without pre-ping/recycle the next request inherited
+# that dead socket and blocked forever (the Slovak "Loading..." hang);
+# statement_timeout makes any such query fail fast instead of pinning the
+# event loop, and connect_timeout bounds connection attempts.
 engine = create_engine(
     settings.database_url,
     echo=settings.database_echo,
     pool_size=10,
     max_overflow=20,
+    pool_pre_ping=True,
+    pool_recycle=300,
+    pool_timeout=10,
+    connect_args={
+        "connect_timeout": 10,
+        "options": (
+            "-c statement_timeout=20000"
+            " -c idle_in_transaction_session_timeout=60000"
+        ),
+    },
 )
 
 # Enable pgvector extension on connect

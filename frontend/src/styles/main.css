@@ -26,6 +26,8 @@
   --accent: #2563eb;
   --accent-hover: #1d4ed8;
   --text-on-accent: #ffffff;
+  --phrase-highlight-bg: rgba(37, 99, 235, 0.14);
+  --phrase-highlight-line: #2563eb;
   /* Sound panel in Settings */
   --sound-accent: #2563eb;
   --sound-accent-soft: rgba(37, 99, 235, 0.4);
@@ -53,9 +55,22 @@
   --accent: #3b82f6;
   --accent-hover: #60a5fa;
   --text-on-accent: #ffffff;
+  --phrase-highlight-bg: rgba(96, 165, 250, 0.22);
+  --phrase-highlight-line: #60a5fa;
   --sound-accent: #60a5fa;
   --sound-accent-soft: rgba(96, 165, 250, 0.45);
   --sound-range-track: #1e3a5f;
+}
+
+/* Phrase mode: the card word inside a generated phrase. Soft accent block
+   plus an underline, so it survives both themes and does not look like a
+   browser-default yellow marker. */
+mark.phrase-highlight {
+  background: var(--phrase-highlight-bg);
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
+  box-shadow: inset 0 -2px 0 var(--phrase-highlight-line);
 }
 
 /* Volume slider + sound checkbox: accent in the app's blue, on both themes

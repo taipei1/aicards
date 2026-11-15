@@ -28,6 +28,24 @@ def get_current_user(db: Session = Depends(get_db)) -> User:
     return user
 
 
+def _review_counts(db: Session, card_ids) -> dict[int, int]:
+    """One grouped query instead of a COUNT per card.
+
+    The Slovak deck is ~5x larger than English; with the old N+1 each queue
+    load issued 50 extra round-trips to the remote DB.
+    """
+    ids = set(card_ids)
+    if not ids:
+        return {}
+    rows = (
+        db.query(Review.card_id, func.count(Review.id))
+        .filter(Review.card_id.in_(ids))
+        .group_by(Review.card_id)
+        .all()
+    )
+    return {card_id: count for card_id, count in rows}
+
+
 def _card_to_queue_item(card: Card, review_count: int) -> QueueItem:
     return QueueItem(
         id=card.id,
@@ -225,18 +243,18 @@ def get_due_cards(
     
     # 3) Merge into single queue, interleaved by stability
     queue_items = []
-    
+    counts = _review_counts(
+        db,
+        [card.id for card in cards] + [card.id for _, card in rev_results],
+    )
+
     for card in cards:
-        review_count = db.query(func.count(Review.id)).filter(
-            Review.card_id == card.id
-        ).scalar() or 0
-        queue_items.append(_card_to_queue_item(card, review_count))
-    
+        queue_items.append(_card_to_queue_item(card, counts.get(card.id, 0)))
+
     for rev, card in rev_results:
-        review_count = db.query(func.count(Review.id)).filter(
-            Review.card_id == card.id
-        ).scalar() or 0
-        queue_items.append(_reverse_to_queue_item(card, rev, review_count))
+        queue_items.append(
+            _reverse_to_queue_item(card, rev, counts.get(card.id, 0))
+        )
     
     # Sort by stability (lowest first = most urgent) to interleave normal+reverse
     queue_items.sort(key=lambda x: x.stability)
@@ -305,13 +323,14 @@ def get_tags(
     user: User = Depends(get_current_user)
 ):
     """Get all unique tags across cards."""
-    query = db.query(Card).filter(Card.user_id == user.id)
+    # Tags only: do not hydrate every Card row (~4.4k in the Slovak deck)
+    # just to read one ARRAY column.
+    query = db.query(Card.tags).filter(Card.user_id == user.id)
     if language:
         query = query.filter(Card.language == language)
-    cards = query.all()
     tags = set()
-    for card in cards:
-        for tag in (card.tags or []):
+    for (card_tags,) in query.all():
+        for tag in (card_tags or []):
             tags.add(tag)
     return sorted(tags)
 
@@ -341,13 +360,11 @@ def search_cards(
         )
     
     cards = query.limit(limit).all()
-    
-    # Attach review counts
+
+    # Attach review counts (one grouped query, not one per card)
+    counts = _review_counts(db, [card.id for card in cards])
     result = []
     for card in cards:
-        review_count = db.query(func.count(Review.id)).filter(
-            Review.card_id == card.id
-        ).scalar() or 0
         card_dict = {
             "id": card.id,
             "front": card.front,
@@ -359,7 +376,7 @@ def search_cards(
             "difficulty": card.difficulty,
             "last_reviewed": card.last_reviewed,
             "created_at": card.created_at,
-            "review_count": review_count
+            "review_count": counts.get(card.id, 0)
         }
         result.append(card_dict)
     
@@ -379,12 +396,10 @@ def get_cards_by_tag(
         Card.language == language,
         Card.tags.any(tag)
     ).order_by(Card.stability.asc()).all()
-    
+
+    counts = _review_counts(db, [card.id for card in cards])
     result = []
     for card in cards:
-        review_count = db.query(func.count(Review.id)).filter(
-            Review.card_id == card.id
-        ).scalar() or 0
         card_dict = {
             "id": card.id,
             "front": card.front,
@@ -396,7 +411,7 @@ def get_cards_by_tag(
             "difficulty": card.difficulty,
             "last_reviewed": card.last_reviewed,
             "created_at": card.created_at,
-            "review_count": review_count
+            "review_count": counts.get(card.id, 0)
         }
         result.append(card_dict)
     

@@ -42,3 +42,6 @@ openspec/
 
 # Obsidian test
 obsidian-test/
+
+# Playwright MCP artifacts
+.playwright-mcp/

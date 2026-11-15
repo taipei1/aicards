@@ -3,7 +3,8 @@ import type { ReactNode } from 'react';
 import type { QueueItem } from '../types';
 import { speak, speakSlow, stopSpeaking, cardSpeechLang } from '../utils/tts';
 import { generateExamples, generateNotes } from '../services/api';
-import type { ExampleItem, ExampleSynonym } from '../services/api';
+import type { ExampleItem, ExampleSynonym, Phrase } from '../services/api';
+import { HighlightedText } from './HighlightedText';
 import { ModelLabel } from './ModelLabel';
 import { hasModifier, isTypingTarget } from '../utils/keyboard';
 import { btnGrade, cardBox, tagStyle } from '../styles/theme';
@@ -14,6 +15,9 @@ function lang(locale: string): string {
 
 interface CardDisplayProps {
   item: QueueItem;
+  /** Generated phrase for this card. Undefined/empty while it is still being
+   *  prepared — the card then falls back to the plain word. */
+  phrase?: Phrase;
   onGrade: (rating: 1 | 2 | 3 | 4, timeSpent: number) => void;
   onDelete: () => void;
   onEdit?: (item: QueueItem) => void;
@@ -77,7 +81,25 @@ function MarkdownText({ text }: { text: string }) {
   return <>{blocks}</>;
 }
 
-export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true }: CardDisplayProps) {
+export function CardDisplay({ item, phrase, onGrade, onDelete, onEdit, isVisible = true }: CardDisplayProps) {
+  const hasPhrase = Boolean(phrase?.phrase && phrase?.translation);
+  const frontText = hasPhrase
+    ? (item.is_reverse ? phrase!.translation : phrase!.phrase)
+    : item.front;
+  const backText = hasPhrase
+    ? (item.is_reverse ? phrase!.phrase : phrase!.translation)
+    : item.back;
+  const frontSpans = hasPhrase
+    ? (item.is_reverse ? phrase!.translation_spans : phrase!.target_spans)
+    : [];
+  const backSpans = hasPhrase
+    ? (item.is_reverse ? phrase!.target_spans : phrase!.translation_spans)
+    : [];
+  // TTS always reads the studied-language side, never the Russian one.
+  const targetSpeechText = hasPhrase
+    ? phrase!.phrase
+    : (item.is_reverse ? item.back : item.front);
+
   const [showBack, setShowBack] = useState(false);
   const [timer, setTimer] = useState(30);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -127,7 +149,7 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
     // TTS fetch made the word arrive long after the card was readable. speak()
     // dedupes repeat calls itself, so a quick manual replay cannot double-play.
     if (!item.is_reverse) {
-      void speak(item.front, lang(item.language));
+      void speak(targetSpeechText, lang(item.language));
     }
 
     timerRef.current = setInterval(() => {
@@ -192,9 +214,9 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
     setShowBack(next);
     // No timer: the word should start with the flip, not 100 ms after it.
     if (next && item.is_reverse) {
-      void speak(item.back, lang(item.language));
+      void speak(targetSpeechText, lang(item.language));
     }
-  }, [item.is_reverse, item.back, item.language]);
+  }, [item.is_reverse, item.language, targetSpeechText]);
 
   const getTimeSpent = () => {
     const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
@@ -205,20 +227,20 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (hasModifier(e) || isTypingTarget(e.target)) return;
+      if (hasModifier(e) || isTypingTarget(e.target) || e.repeat) return;
       if (e.code === 'Space') { e.preventDefault(); handleFlip(); }
       if (e.code === 'Digit1') { onGrade(1, getTimeSpent()); }
       if (e.code === 'Digit2') { onGrade(2, getTimeSpent()); }
       if (e.code === 'Digit3') { onGrade(3, getTimeSpent()); }
       if (e.code === 'Digit4') { onGrade(4, getTimeSpent()); }
       if (e.code === 'KeyD') { onDelete(); }
-      if (e.code === 'KeyR') { speak(item.is_reverse ? item.back : item.front, lang(item.language)); }
+      if (e.code === 'KeyR') { speak(targetSpeechText, lang(item.language)); }
       if (e.code === 'KeyT') {
         e.preventDefault();
         if (!typingMode) setTypingMode(true);
       }
     },
-    [onGrade, onDelete, handleFlip, typingMode, item, isVisible]
+    [onGrade, onDelete, handleFlip, typingMode, item, isVisible, targetSpeechText]
   );
 
   useEffect(() => {
@@ -318,7 +340,7 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
   // KeyM toggles the More panel (Space flip, 1-4 grade, D delete, R replay, T type)
   useEffect(() => {
     const onMoreKey = (e: KeyboardEvent) => {
-      if (!isVisible) return;
+      if (!isVisible || e.repeat) return;
       if (hasModifier(e) || isTypingTarget(e.target)) return;
       if (e.code === 'KeyM') {
         e.preventDefault();
@@ -329,9 +351,9 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
     return () => window.removeEventListener('keydown', onMoreKey);
   }, [toggleMore]);
 
-  // TTS — for reverse cards say the target language word (item.back)
-  const sayWord = () => manualSpeak(item.is_reverse ? item.back : item.front, false);
-  const sayWordSlow = () => manualSpeak(item.is_reverse ? item.back : item.front, true);
+  // TTS — always the studied-language side (phrase when ready).
+  const sayWord = () => manualSpeak(targetSpeechText, false);
+  const sayWordSlow = () => manualSpeak(targetSpeechText, true);
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto' }}>
@@ -352,8 +374,16 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
         onClick={handleFlip}
       >
         <div style={{ textAlign: 'center', marginBottom: showBack ? '16px' : '0' }}>
-          <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>
-            {item.front}
+          <div style={{
+            fontSize: hasPhrase ? '1.6rem' : '2rem',
+            fontWeight: 'bold',
+            color: 'var(--text-primary)',
+            lineHeight: 1.35,
+            wordBreak: 'break-word',
+          }}>
+            {hasPhrase
+              ? <HighlightedText text={frontText} spans={frontSpans} />
+              : frontText}
           </div>
           <div style={{ marginTop: '8px', display: 'flex', gap: '8px', justifyContent: 'center' }}>
             <span
@@ -382,8 +412,16 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
             paddingTop: '14px',
             width: '100%',
           }}>
-            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>
-              {item.back}
+            <div style={{
+              fontSize: hasPhrase ? '1.35rem' : '1.5rem',
+              fontWeight: 'bold',
+              color: 'var(--text-primary)',
+              lineHeight: 1.35,
+              wordBreak: 'break-word',
+            }}>
+              {hasPhrase
+                ? <HighlightedText text={backText} spans={backSpans} />
+                : backText}
             </div>
             {item.hint && (
               <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '8px' }}>
@@ -393,6 +431,15 @@ export function CardDisplay({ item, onGrade, onDelete, onEdit, isVisible = true 
           </div>
         )}
       </div>
+
+      {/* Attribution for the generated phrase. The value comes from the
+          backend and is the model that really answered (including fallback),
+          not just the configured one. */}
+      {hasPhrase && phrase?.model && (
+        <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+          <ModelLabel model={phrase.model} label="model (phrase)" />
+        </div>
+      )}
 
       {/* Typing mode */}
       <div style={{ marginBottom: '10px' }}>

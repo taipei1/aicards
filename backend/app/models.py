@@ -38,6 +38,7 @@ class Card(Base):
     user = relationship("User", back_populates="cards")
     reviews = relationship("Review", back_populates="card", cascade="all, delete-orphan")
     reverse = relationship("CardReverse", back_populates="card", uselist=False, cascade="all, delete-orphan")
+    phrase = relationship("CardPhrase", back_populates="card", uselist=False, cascade="all, delete-orphan")
     
     __table_args__ = (
         UniqueConstraint('user_id', 'front', 'language', name='uq_card_user_front_lang'),
@@ -193,4 +194,31 @@ class CardReverse(Base):
         UniqueConstraint('card_id', name='uq_reverse_card'),
         Index('idx_reverse_card', 'card_id'),
         Index('idx_reverse_due', 'card_id', 'last_reviewed', 'stability'),
+    )
+
+
+class CardPhrase(Base):
+    """Generated target-language phrase shown instead of the bare word.
+
+    One row per card. `source_hash` covers the card fields the model saw, so
+    editing the card invalidates the cached phrase without a manual purge.
+    """
+    __tablename__ = "card_phrases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    card_id = Column(Integer, ForeignKey("cards.id", ondelete="CASCADE"), nullable=False)
+    phrase = Column(Text, nullable=False)
+    translation = Column(Text, nullable=False)
+    target_spans = Column(ARRAY(String), default=list, nullable=False)
+    translation_spans = Column(ARRAY(String), default=list, nullable=False)
+    model = Column(String(255), nullable=True)
+    source_hash = Column(String(64), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    card = relationship("Card", back_populates="phrase")
+
+    __table_args__ = (
+        UniqueConstraint('card_id', name='uq_card_phrase'),
+        Index('idx_card_phrase_card', 'card_id'),
     )
