@@ -30,6 +30,10 @@ services:
       OMNIROUTER_LOCAL_API_KEY: ${OMNIROUTER_LOCAL_API_KEY:-local}
       OMNIROUTER_LOCAL_CHAT_MODEL: ${OMNIROUTER_LOCAL_CHAT_MODEL:-aicards-phrase}
       OMNIROUTER_LOCAL_EMBEDDING_MODEL: ${OMNIROUTER_LOCAL_EMBEDDING_MODEL:-openrouter/openai/text-embedding-3-small}
+      # Optional dedicated provider for phrases (empty = active profile).
+      PHRASE_BASE_URL: ${PHRASE_BASE_URL:-}
+      PHRASE_API_KEY: ${PHRASE_API_KEY:-}
+      PHRASE_MODEL: ${PHRASE_MODEL:-}
       APP_PASSWORD_HASH: ${APP_PASSWORD_HASH:-}
       OBSIDIAN_FOLDER_PATH: /app/obsidian-test
       SRS_TAG: ${SRS_TAG:-srs}

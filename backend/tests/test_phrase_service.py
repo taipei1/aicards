@@ -146,6 +146,30 @@ def test_required_units_excludes_only_replaceable_placeholders():
     assert required_units("take off", "en") == 2
 
 
+def test_expression_core_drops_dictionary_notes():
+    # Grammar notes are not words the phrase has to contain.
+    assert front_units("pripraviť sa na + Acc", "sk") == 3
+    assert front_units("daviť sa (нет совершенного)", "sk") == 2
+    # English dictionaries write infinitives with `to` and nouns with articles.
+    assert front_units("to bring", "en") == 1
+    assert max_phrase_words("to bring", "en") == 4
+    assert front_units("a cooker", "en") == 1
+    assert front_units("an entrance", "en") == 1
+    # The article stays when it is part of a longer expression.
+    assert front_units("the number of", "en") == 3
+    assert front_units("The bomb exploded", "en") == 3
+
+
+def test_slash_inside_a_sentence_is_not_a_variant_separator():
+    # `vás/ťa` are alternatives for one slot, not two versions of the sentence.
+    front = "Môžem sa vás/ťa na niečo spýtať/opýtať?"
+    assert front_units(front, "sk") == 6
+    assert required_units(front, "sk") == 6
+    assert max_phrase_words(front, "sk") == 9
+    assert front_units("vytvárať / vytvoriť", "sk") == 1
+    assert front_units("hore/dole", "sk") == 1
+
+
 def test_placeholder_swap_guard_keeps_grammar_sensitive_sentences():
     assert placeholder_swap_is_safe("Nefunguje mi to.", "sk")
     assert placeholder_swap_is_safe("brať to vážne", "sk")

@@ -43,6 +43,15 @@ class Settings(BaseSettings):
     omnirouter_local_chat_model: str = "aicards-phrase"
     omnirouter_local_embedding_model: str = "openrouter/openai/text-embedding-3-small"
 
+    # Optional dedicated provider for phrase generation. Phrases are the app's
+    # visible product, so production may need to reach a strong model directly
+    # even when the OmniRoute box is not reachable from the server. Empty
+    # values reuse the active profile above. `phrase_model` may contain a
+    # comma-separated list: the first model that answers wins.
+    phrase_base_url: str = ""
+    phrase_api_key: str = ""
+    phrase_model: str = ""
+
     # App password gate (single shared password, empty = no auth)
     app_password_hash: str = ""
     

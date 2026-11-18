@@ -35,6 +35,19 @@ class LLMGatewayError(Exception):
     pass
 
 
+class LLMGatewayHTTPError(LLMGatewayError):
+    """The gateway answered with an HTTP error (as opposed to being dead).
+
+    Model-level failures (400 bad request, 402 no credits, 429 rate limit) do
+    not mean the gateway host is down, so they must not trip the breaker that
+    sends later requests to the Groq fallback.
+    """
+
+    def __init__(self, message: str, status: int) -> None:
+        super().__init__(message)
+        self.status = status
+
+
 def get_setting(db: Optional[Session], key: str) -> Optional[str]:
     if db is None:
         return None
@@ -96,11 +109,17 @@ def _mark_primary_down(base_url: str) -> None:
         _primary_down_until[base_url] = time.time() + PRIMARY_DOWN_SECONDS
 
 
-def resolve_config(db: Optional[Session] = None, provider: Optional[str] = None) -> dict:
+def resolve_config(
+    db: Optional[Session] = None,
+    provider: Optional[str] = None,
+    for_phrases: bool = False,
+) -> dict:
     """Effective gateway config: DB (UI) overrides env.
 
     ``provider`` forces a profile (used by Settings → Test); otherwise the
-    active profile from the DB/env is used.
+    active profile from the DB/env is used. ``for_phrases`` layers the optional
+    phrase-specific provider on top: production points it straight at a strong
+    model because the OmniRoute box is not always reachable from the server.
     """
     active = normalize_provider(provider if provider is not None else get_provider(db))
     env = _profile_env(active)
@@ -112,7 +131,7 @@ def resolve_config(db: Optional[Session] = None, provider: Optional[str] = None)
         return env_val or ""
 
     prefix = env["prefix"]
-    return {
+    cfg = {
         "provider": active,
         "base_url": (pick(f"{prefix}base_url", env["base_url"]) or "").rstrip("/"),
         "api_key": pick(f"{prefix}api_key", env["api_key"]),
@@ -120,6 +139,20 @@ def resolve_config(db: Optional[Session] = None, provider: Optional[str] = None)
         "embedding_model": pick(f"{prefix}embedding_model", env["embedding_model"]),
         "fallback_model": env_settings.groq_fallback_model,
     }
+    if for_phrases:
+        cfg["base_url"] = (
+            pick("omnirouter.phrase.base_url", env_settings.phrase_base_url)
+            or cfg["base_url"]
+        ).rstrip("/")
+        cfg["api_key"] = (
+            pick("omnirouter.phrase.api_key", env_settings.phrase_api_key)
+            or cfg["api_key"]
+        )
+        cfg["chat_model"] = (
+            pick("omnirouter.phrase.model", env_settings.phrase_model)
+            or cfg["chat_model"]
+        )
+    return cfg
 
 
 def is_configured(db: Optional[Session] = None, provider: Optional[str] = None) -> bool:
@@ -142,7 +175,10 @@ def _content_from_message(message: dict) -> str:
 
 def _read_completion(resp: httpx.Response, label: str) -> tuple[str, str]:
     if resp.status_code != 200:
-        raise LLMGatewayError(f"{label} HTTP {resp.status_code}: {resp.text[:300]}")
+        raise LLMGatewayHTTPError(
+            f"{label} HTTP {resp.status_code}: {resp.text[:300]}",
+            resp.status_code,
+        )
     try:
         data = resp.json()
         message = data["choices"][0]["message"]
@@ -193,6 +229,53 @@ def _groq_chat(
         raise LLMGatewayError(f"Groq unreachable: {e}")
 
 
+def _primary_chat(
+    cfg: dict,
+    messages: List[dict],
+    temperature: float,
+    max_tokens: int,
+    timeout: int,
+) -> tuple[str, str]:
+    """POST to the configured OpenAI-compatible gateway.
+
+    `chat_model` may be a comma-separated list: if one model is out of credits
+    or rate-limited, the next one answers. `reasoning_effort: none` is required
+    for reasoners that otherwise burn the whole budget on `reasoning_content`
+    and return empty `content`. A few gateways reject the field with HTTP 400
+    ("Unknown parameter"); retrying the same model without it is harmless
+    because the field was the only thing they objected to.
+    """
+    models = [m.strip() for m in (cfg.get("chat_model") or "").split(",") if m.strip()]
+    if not models:
+        raise LLMGatewayError("No chat model configured")
+    last: LLMGatewayHTTPError | None = None
+    for model in models:
+        base = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        for body in ({**base, "reasoning_effort": "none"}, base):
+            resp = httpx.post(
+                f"{cfg['base_url']}/chat/completions",
+                headers={"Authorization": f"Bearer {cfg['api_key']}"},
+                json=body,
+                # A dead host must not eat the whole request timeout: connect
+                # quickly, then give the model the full read window.
+                timeout=httpx.Timeout(connect=4.0, read=timeout, write=30.0, pool=4.0),
+            )
+            try:
+                return _read_completion(resp, f"Gateway {model}")
+            except LLMGatewayHTTPError as exc:
+                last = exc
+                if exc.status == 400 and "reasoning" in resp.text.lower():
+                    continue  # same model, request without the field
+                break  # next model in the list
+    raise last or LLMGatewayError("Gateway request failed")
+
+
 def chat_completion_ex(
     db: Optional[Session],
     messages: List[dict],
@@ -202,6 +285,7 @@ def chat_completion_ex(
     provider: Optional[str] = None,
     allow_fallback: bool = True,
     ignore_breaker: bool = False,
+    for_phrases: bool = False,
 ) -> tuple[str, str]:
     """One chat completion. Returns (text, actual_model).
 
@@ -211,9 +295,10 @@ def chat_completion_ex(
 
     ``provider`` forces a profile (Settings → Test). ``allow_fallback=False``
     makes the test report the selected profile honestly instead of masking a
-    dead gateway with a successful Groq response.
+    dead gateway with a successful Groq response. ``for_phrases`` layers the
+    dedicated phrase provider (PHRASE_* env / omnirouter.phrase.* settings).
     """
-    cfg = resolve_config(db, provider=provider)
+    cfg = resolve_config(db, provider=provider, for_phrases=for_phrases)
     provider_label = "local" if cfg["provider"] == "local" else "server"
     primary_configured = bool(cfg["api_key"] and cfg["base_url"])
     if not primary_configured and not (allow_fallback and env_settings.groq_api_key):
@@ -221,34 +306,17 @@ def chat_completion_ex(
     primary_error: Exception | None = None
 
     if primary_configured and (ignore_breaker or not _primary_is_down(cfg["base_url"])):
-        url = f"{cfg['base_url']}/chat/completions"
         try:
-            resp = httpx.post(
-                url,
-                headers={"Authorization": f"Bearer {cfg['api_key']}"},
-                json={
-                    "model": cfg["chat_model"],
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                    "stream": False,
-                    # Reasoning MUST be off. This gateway mixes reasoning models
-                    # (deepseek-v4.*) with plain ones: a reasoner happily burns the
-                    # entire max_tokens budget in `reasoning_content` and returns
-                    # finish_reason=length with an EMPTY `content` — the app then
-                    # sees nothing and reports "LLM gateway error".
-                    # Keep only the standard OpenAI field: local OmniRoute models
-                    # reject extra properties such as `enable_thinking`/`thinking`
-                    # with HTTP 400. If a gateway ignores this, the empty-content
-                    # guard below still sends the request to the Groq fallback.
-                    "reasoning_effort": "none",
-                },
-                # A dead host must not eat the whole request timeout: connect
-                # quickly, then give the model the full read window.
-                timeout=httpx.Timeout(connect=4.0, read=timeout, write=30.0, pool=4.0),
-            )
-            text, model = _read_completion(resp, "Gateway")
+            text, model = _primary_chat(cfg, messages, temperature, max_tokens, timeout)
             return text, model or cfg["chat_model"]
+        except LLMGatewayHTTPError as e:
+            primary_error = e
+            # A 4xx is about this request/model (bad parameter, no credits,
+            # rate limit): the gateway itself is alive, so keep using it for
+            # the next request instead of hiding behind Groq for two minutes.
+            if not 400 <= e.status < 500:
+                _mark_primary_down(cfg["base_url"])
+            print(f"OmniRoute ({provider_label}) request failed: {e}")
         except Exception as e:
             primary_error = e
             _mark_primary_down(cfg["base_url"])

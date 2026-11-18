@@ -4,8 +4,8 @@ The review UI must never wait for the model. This service keeps a persistent
 cache in `card_phrases`, and a small daemon worker fills it in priority order:
 
 * first cards of the visible queue (chunks of 5),
-* the rest of the visible queue (chunks of 10),
-* the next 50 cards for the same deck/tag (chunks of 10).
+* the rest of the visible queue (chunks of 20),
+* the next 50 cards for the same deck/tag (chunks of 20).
 
 Requests only read the cache and enqueue missing card ids; generation happens
 in this worker. A missing/failed phrase simply leaves the card on its word
@@ -34,6 +34,14 @@ LANGUAGE_NAMES = {
 
 # A failed card is not hammered on every poll. A later ensure call retries it.
 FAILED_COOLDOWN_SECONDS = 5 * 60
+
+# One request carries up to 20 cards. The strongest working model answers a
+# 20-card batch in ~8s and keeps the same validation rate as at 10 cards, so
+# one big request beats two small ones.
+BATCH_SIZE = 20
+# The cards the learner is looking at right now should not wait for the full
+# batch; this small chunk is answered first.
+FIRST_VISIBLE_CHUNK = 5
 
 _WORD_RE = re.compile(r"[^\W_]+(?:[’'\-][^\W_]+)*", re.UNICODE)
 _CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
@@ -70,24 +78,94 @@ def word_count(text: str) -> int:
     return len(_WORD_RE.findall(text or ""))
 
 
-def front_units(front: str) -> int:
+_GRAMMAR_MARKERS = {
+    "acc", "dat", "gen", "instr", "loc", "nom", "prep",
+    "acc.", "dat.", "gen.", "instr.", "loc.", "nom.", "prep.",
+}
+
+
+def expression_core(front: str, language: str = "") -> str:
+    """The study expression without dictionary grammar notes.
+
+    `pripraviť sa na + Acc` is a card for `pripraviť sa na`, and
+    `daviť sa (нет совершенного)` is a card for `daviť sa`. Counting the note
+    as part of the expression made the prompt ask the model to include "Acc"
+    and the validator demand it in `target_spans`.
+
+    English infinitive cards (`to bring`) are the same story: a natural phrase
+    uses `bring`, and the leading `to` is a dictionary marker, not a word the
+    learner has to see highlighted.
+    """
+    text = re.sub(r"\([^)]*\)", " ", front or "")
+    text = text.replace("+", " ")
+    words = [
+        word for word in text.split()
+        if word.strip(".,;:").casefold() not in _GRAMMAR_MARKERS
+    ]
+    core = " ".join(words).strip()
+    if language == "en":
+        core = re.sub(r"^to\s+", "", core, flags=re.IGNORECASE)
+        # `a cooker` is a card for `cooker`: the article is dictionary noise.
+        # Only a bare noun is unwrapped, so `the number of` and full sentences
+        # keep their article.
+        core = re.sub(r"^(?:a|an|the)\s+(\w+)$", r"\1", core, flags=re.IGNORECASE)
+    return core or (front or "").strip()
+
+
+def _expression_variants(front: str, language: str = "") -> list[str]:
+    """The card expression, split into slash-separated alternatives.
+
+    Dictionary cards use a slash for alternative versions of the whole
+    expression (`vytvárať / vytvoriť`). Inside a sentence the same slash marks
+    a short alternative for one slot (`Môžem sa vás/ťa ... spýtať/opýtať?`),
+    and splitting that into "variants" would claim the whole 8-word sentence
+    is a 1-word card.
+    """
+    core = expression_core(front, language)
+    parts = [part.strip() for part in re.split(r"\s*/\s*", core) if part.strip()]
+    if len(parts) < 2:
+        return [core] if core else []
+    counts = [word_count(part) for part in parts]
+    if min(counts) * 2 < max(counts):
+        return [core]
+    return parts
+
+
+def inline_alternative_units(front: str, language: str = "") -> int | None:
+    """Word count for a sentence with `/` alternatives inside it.
+
+    `Môžem sa vás/ťa na niečo spýtať/opýtať?` is one sentence with two
+    alternatives, so the shortest correct phrase has 8 - 2 = 6 words: neither
+    the shortest slash chunk (1) nor the literal card with both options (8).
+    Returns ``None`` when the slashes separate whole expressions instead.
+    """
+    core = expression_core(front, language)
+    parts = [part.strip() for part in re.split(r"\s*/\s*", core) if part.strip()]
+    if len(parts) < 2:
+        return None
+    counts = [word_count(part) for part in parts]
+    if min(counts) * 2 >= max(counts):
+        return None
+    return max(1, word_count(core) - core.count("/"))
+
+
+def front_units(front: str, language: str = "") -> int:
     """Word count of the card expression, treating `a / b` as alternatives.
 
     Cards imported from the dictionary often contain aspect pairs such as
     `vytvárať / vytvoriť`. The model may use either variant, so the shorter
     variant is the number of words that must be represented.
     """
-    variants = [
-        part.strip()
-        for part in re.split(r"\s*/\s*", front or "")
-        if part.strip()
-    ]
+    inline = inline_alternative_units(front, language)
+    if inline is not None:
+        return inline
+    variants = _expression_variants(front, language)
     if not variants:
         return 0
     return min(word_count(part) for part in variants)
 
 
-def max_phrase_words(front: str) -> int:
+def max_phrase_words(front: str, language: str = "") -> int:
     """Hard ceiling for a generated phrase.
 
     Short cards stay in the compact 2-4 word window. A card that is already a
@@ -96,7 +174,7 @@ def max_phrase_words(front: str) -> int:
     hľadal.") when a placeholder swap would break agreement. Counting two
     context words rejected exactly that suggested example and forced a retry.
     """
-    units = front_units(front)
+    units = front_units(front, language)
     return 4 if units <= 2 else units + 3
 
 
@@ -107,13 +185,12 @@ def required_units(front: str, language: str) -> int:
     noun, so only the rest of the expression is a hard requirement. For short
     cards the whole expression must be represented.
     """
-    variants = [
-        part.strip()
-        for part in re.split(r"\s*/\s*", front or "")
-        if part.strip()
-    ]
+    variants = _expression_variants(front, language)
     if not variants:
         return 0
+    inline = inline_alternative_units(front, language)
+    if inline is not None:
+        return inline
     placeholders = _PLACEHOLDER_WORDS.get(language, set())
     if not placeholders:
         return min(word_count(part) for part in variants)
@@ -132,7 +209,7 @@ def required_units(front: str, language: str) -> int:
 def placeholder_swap_is_safe(front: str, language: str) -> bool:
     if language != "sk":
         return True
-    words = [word.casefold() for word in _WORD_RE.findall(front or "")]
+    words = [word.casefold() for word in _WORD_RE.findall(expression_core(front, language))]
     if not words:
         return True
     # "To je (presne) ono." — the placeholder is the nominal predicate.
@@ -231,18 +308,20 @@ def _normalize_lemma(value: str) -> str:
     return text.strip('"\'«».,;:!?()[]{}').casefold()
 
 
-def lemma_matches(front: str, lemma: str) -> bool:
+def lemma_matches(front: str, lemma: str, language: str = "") -> bool:
     """True when the model copied the card word (or one aspect variant)."""
     target = _normalize_lemma(lemma)
     if not target:
         return True
-    if target == _normalize_lemma(front):
+    if "/" in (front or ""):
+        # A slashed card offers alternatives; the model may copy one of them
+        # ("Môžem sa ťa na niečo opýtať?") instead of the literal `vás/ťa`
+        # spelling, which is exactly what the phrase should do.
         return True
-    variants = [
-        part.strip()
-        for part in re.split(r"\s*/\s*", front or "")
-        if part.strip()
-    ]
+    core = expression_core(front, language)
+    if target == _normalize_lemma(core) or target == _normalize_lemma(front):
+        return True
+    variants = _expression_variants(front, language)
     return any(target == _normalize_lemma(part) for part in variants)
 
 
@@ -372,12 +451,16 @@ class PhraseService:
     # ---------- worker ----------
 
     def _split(self, ids: list[int], priority: int) -> list[list[int]]:
-        # The first visible cards should arrive before a full 10-card answer.
-        if priority == 0 and len(ids) > 5:
-            chunks = [ids[:5]]
-            chunks.extend(ids[i:i + 10] for i in range(5, len(ids), 10))
+        # The first visible cards should arrive before a full batch answer.
+        # Everything else goes in batches of 20: a strong model produces the
+        # same quality per item at 20 as at 10, while using one request
+        # instead of two.
+        if priority == 0 and len(ids) > FIRST_VISIBLE_CHUNK:
+            chunks = [ids[:FIRST_VISIBLE_CHUNK]]
+            rest = ids[FIRST_VISIBLE_CHUNK:]
+            chunks.extend(rest[i:i + BATCH_SIZE] for i in range(0, len(rest), BATCH_SIZE))
             return chunks
-        return [ids[i:i + 10] for i in range(0, len(ids), 10)]
+        return [ids[i:i + BATCH_SIZE] for i in range(0, len(ids), BATCH_SIZE)]
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -462,7 +545,7 @@ class PhraseService:
                 # expression itself is a valid, grammatical answer. This avoids
                 # leaving grammar-sensitive sentences ("To je presne ono.")
                 # without any cached phrase.
-                keep_whole = front_units(card.front) >= 3
+                keep_whole = front_units(card.front, language) >= 3
                 text, retry_model = self._chat(
                     db, [card], language, strict=True, keep_whole=keep_whole
                 )
@@ -493,8 +576,12 @@ class PhraseService:
             db,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.55,
-            max_tokens=min(4000, 300 + 220 * max(1, len(cards))),
+            max_tokens=min(6000, 400 + 260 * max(1, len(cards))),
             timeout=120,
+            # Phrases are the product itself. A weak Groq model writing them
+            # is worse than the bare word for a few seconds: no fallback.
+            allow_fallback=False,
+            for_phrases=True,
         )
 
     def _save_many(
@@ -538,10 +625,10 @@ class PhraseService:
         payload = [
             {
                 "id": card.id,
-                "word": card.front,
+                "word": expression_core(card.front, language),
                 "translation": card.back,
                 "hint": (card.hint or "")[:300],
-                "max_words": max_phrase_words(card.front),
+                "max_words": max_phrase_words(card.front, language),
             }
             for card in cards
         ]
@@ -698,11 +785,11 @@ class PhraseService:
         if not translation:
             return "empty translation"
 
-        front_words = front_units(card.front)
+        front_words = front_units(card.front, language)
         # A single word (or a 2-word collocation) must stay in the requested
         # 2-4 word window. If the card is already a longer expression, it has
         # to keep its core and may add a short context clause.
-        max_words = max_phrase_words(card.front)
+        max_words = max_phrase_words(card.front, language)
         count = word_count(phrase)
         if count < 2:
             return f"phrase has {count} word(s), need 2-4"
@@ -722,7 +809,7 @@ class PhraseService:
 
         # The model must copy the lemma it was given; this catches a synonym.
         lemma = _clean_text(item.get("target_lemma") or "")
-        if lemma and not lemma_matches(card.front, lemma):
+        if lemma and not lemma_matches(card.front, lemma, language):
             return f"target_lemma {lemma!r} does not match {card.front!r}"
 
         actual_target: list[str] = []
