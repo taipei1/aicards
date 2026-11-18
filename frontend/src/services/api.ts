@@ -449,23 +449,66 @@ export async function getActivityStats(days: number = 105): Promise<ActivityStat
 
 export interface MaturityTrendPoint {
   date: string;
-  total: number;
-  touched: number;   // words repeated at least once (cumulative)
-  few: number;       // words repeated >= 2 times
-  many: number;      // words repeated >= 4 times
+  total: number;       // deck size on that date
+  new: number;         // never repeated
+  touched: number;     // words repeated at least once (cumulative)
+  once: number;        // exactly 1 repeat
+  few: number;         // words repeated >= 2 times
+  few_band: number;    // exactly 2–3 repeats
+  many: number;        // words repeated >= 4 times
+  new_pct: number;
   touched_pct: number;
+  once_pct: number;
   few_pct: number;
+  few_band_pct: number;
   many_pct: number;
 }
 
-export async function getMaturityTrend(days: number = 90, points: number = 15): Promise<{
+export async function getMaturityTrend(
+  days: number = 90,
+  points: number = 15,
+  language?: string,
+): Promise<{
   days: number;
+  language: string | null;
   total_cards: number;
   from: string;
   to: string;
   series: MaturityTrendPoint[];
 }> {
-  const res = await api.get('/stats/maturity-trend', { params: { days, points } });
+  const params: Record<string, any> = { days, points };
+  if (language) params.language = language;
+  const res = await api.get('/stats/maturity-trend', { params });
+  return res.data;
+}
+
+export interface DeckFlowDay {
+  date: string;
+  added: number;
+  reviews: number;
+  reviewed: number;
+  first_touched: number;
+  reached_four: number;
+  total_cards: number;
+  touched_total: number;
+  untouched_total: number;
+}
+
+export interface DeckFlowStats {
+  days: number;
+  from: string;
+  to: string;
+  total_cards: number;
+  touched_total: number;
+  untouched_total: number;
+  added_in_window: number;
+  first_touched_in_window: number;
+  untouched_change: number;
+  daily: DeckFlowDay[];
+}
+
+export async function getDeckFlow(days: number = 70): Promise<DeckFlowStats> {
+  const res = await api.get('/stats/deck-flow', { params: { days } });
   return res.data;
 }
 

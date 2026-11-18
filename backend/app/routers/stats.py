@@ -276,50 +276,80 @@ def get_maturity(
 def get_maturity_trend(
     days: int = Query(90, description="Window of the trend in days"),
     points: int = Query(15, description="Number of sampled points (dates) in the series"),
+    language: Optional[str] = Query(None, description="Only this deck: en or sk"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """Deck maturity over time — several curves, not one number.
+    """Deck composition over time, as a share of the deck on each date.
 
     Maturity is measured by how many times each word has actually been
     repeated (review counts, not FSRS stability: stability was seeded from
     card age on import and reaches absurd values, so a stability-based split
-    reads ~100% mastered). For each sampled date we count, over the whole
-    deck, how many words have cumulative repeats >= 1, >= 2 and >= 4 — so the
-    chart shows the deck growing from "new" to "seen" to "drilled".
+    reads ~100% mastered).
 
-    Buckets are computed per (card, day) with a ceiling of 4 to keep the
-    intermediate data tiny; every word is counted at each snapshot date.
+    The denominator is the deck as it existed on the snapshot date, not
+    today's total: cards added later must not dilute the past. That makes the
+    percentages comparable over time and shows whether the deck matures as it
+    grows. Bands: not repeated yet, exactly 1, 2–3, 4+ repeats.
     """
     horizon = max(2, days)
     npoints = max(2, min(60, points))
     today = datetime.now(timezone.utc).date()
     start = today - timedelta(days=horizon - 1)
 
+    created_rows = db.execute(text("""
+        SELECT c.created_at::date AS day, count(*)::int AS n
+        FROM cards c
+        JOIN users u ON u.id = c.user_id
+        WHERE u.username = 'default'
+          AND c.created_at IS NOT NULL
+          AND (:language IS NULL OR c.language = :language)
+        GROUP BY c.created_at::date
+    """), {"language": language}).fetchall()
+    created_by_day = [(r.day, r.n) for r in created_rows if r.day is not None]
+    cards_before_start = sum(n for d, n in created_by_day if d < start)
+
     rows = db.execute(text("""
-        SELECT r.card_id, r.review_time::date AS day, count(*)::int AS n
+        SELECT r.card_id,
+               c.created_at::date AS created,
+               r.review_time::date AS day,
+               count(*)::int AS n
         FROM reviews r
         JOIN cards c ON c.id = r.card_id
         JOIN users u ON u.id = c.user_id
         WHERE u.username = 'default'
-        GROUP BY r.card_id, r.review_time::date
-    """)).fetchall()
+          AND (:language IS NULL OR c.language = :language)
+        GROUP BY r.card_id, c.created_at::date, r.review_time::date
+    """), {"language": language}).fetchall()
 
-    # per card: sorted [(day, cumulative_repeats_at_that_day)] capped at 4
+    # per card: creation date + sorted [(review day, repeats that day)]
+    created: dict = {}
     per_card: dict = {}
     for r in rows:
         if r.day is None:
             continue
+        created[r.card_id] = r.created
         arr = per_card.setdefault(r.card_id, {})
         arr[r.day] = arr.get(r.day, 0) + r.n
-    cards_days = [(cid, sorted(by_day.items())) for cid, by_day in per_card.items()]
+    cards_days = [(cid, created.get(cid), sorted(by_day.items())) for cid, by_day in per_card.items()]
 
-    total_cards = db.query(Card).filter(Card.user_id == user.id).count()
+    total_cards_query = db.query(Card).filter(Card.user_id == user.id)
+    if language:
+        total_cards_query = total_cards_query.filter(Card.language == language)
+    total_cards = total_cards_query.count()
+
+    def deck_size(day: date) -> int:
+        """Cards that already existed at the end of `day`."""
+        return cards_before_start + sum(
+            n for d, n in created_by_day if start <= d <= day
+        )
 
     def snapshot(day: date):
         """Counts over the deck at end of `day`, capped at 1/2/4 repeats."""
         touched = few = many = 0
-        for _cid, by_day in cards_days:
+        for _cid, created_at, by_day in cards_days:
+            if created_at is not None and created_at > day:
+                continue
             cum = 0
             for d, n in by_day:
                 if d <= day:
@@ -334,7 +364,6 @@ def get_maturity_trend(
                 many += 1
         return touched, few, many
 
-    denom = max(1, total_cards)
     step = (horizon - 1) / (npoints - 1)
     series = []
     seen_dates = set()
@@ -344,23 +373,140 @@ def get_maturity_trend(
             continue
         seen_dates.add(d)
         touched, few, many = snapshot(d)
+        total = deck_size(d)
+        denom = max(1, total)
+        once = touched - few              # exactly 1 repeat
+        few_band = few - many             # exactly 2–3 repeats
         series.append({
             "date": d.isoformat(),
-            "total": total_cards,
-            "touched": touched,                      # >= 1 повтор
-            "few": few,                              # >= 2 повтора
-            "many": many,                            # >= 4 повторов
+            "total": total,                 # deck size on that date
+            "new": total - touched,         # never repeated
+            "touched": touched,             # >= 1 повтор
+            "once": once,                   # ровно 1 повтор
+            "few": few,                     # >= 2 повтора (legacy)
+            "few_band": few_band,           # 2–3 повтора
+            "many": many,                   # >= 4 повторов
+            "new_pct": round((total - touched) / denom * 100, 1),
             "touched_pct": round(touched / denom * 100, 1),
+            "once_pct": round(once / denom * 100, 1),
             "few_pct": round(few / denom * 100, 1),
+            "few_band_pct": round(few_band / denom * 100, 1),
             "many_pct": round(many / denom * 100, 1),
         })
 
     return {
         "days": horizon,
+        "language": language,
         "total_cards": total_cards,
         "from": series[0]["date"] if series else start.isoformat(),
         "to": series[-1]["date"] if series else today.isoformat(),
         "series": series,
+    }
+
+
+@router.get("/deck-flow")
+def get_deck_flow(
+    days: int = Query(70, ge=7, le=365, description="Window of daily flow data"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Words added vs words started / drilled, per day.
+
+    Answers "am I adding cards faster than I can learn them": `added` counts
+    cards created that day, `first_touched` counts cards that got their very
+    first review that day, and `untouched_total` is the cumulative backlog of
+    never-reviewed cards. The frontend groups these days into weeks.
+    """
+    horizon = max(7, min(365, days))
+    today = datetime.now(timezone.utc).date()
+    since = today - timedelta(days=horizon - 1)
+
+    added_rows = db.execute(text("""
+        SELECT c.created_at::date AS day, count(*)::int AS added
+        FROM cards c
+        JOIN users u ON u.id = c.user_id
+        WHERE u.username = 'default'
+          AND c.created_at IS NOT NULL
+          AND c.created_at::date >= :since
+        GROUP BY c.created_at::date
+    """), {"since": since}).fetchall()
+    added_by_day = {r.day: r.added for r in added_rows}
+
+    review_rows = db.execute(text("""
+        WITH ranked AS (
+            SELECT r.card_id,
+                   r.review_time::date AS day,
+                   row_number() OVER (
+                       PARTITION BY r.card_id ORDER BY r.review_time, r.id
+                   ) AS rn
+            FROM reviews r
+            JOIN users u ON u.id = r.user_id
+            WHERE u.username = 'default'
+        )
+        SELECT day,
+               count(*)::int AS reviews,
+               count(DISTINCT card_id)::int AS reviewed,
+               count(*) FILTER (WHERE rn = 1)::int AS first_touched,
+               count(*) FILTER (WHERE rn = 4)::int AS reached_four
+        FROM ranked
+        WHERE day >= :since
+        GROUP BY day
+    """), {"since": since}).fetchall()
+    reviews_by_day = {r.day: r for r in review_rows}
+
+    cards_before = db.execute(text("""
+        SELECT count(*)::int
+        FROM cards c
+        JOIN users u ON u.id = c.user_id
+        WHERE u.username = 'default'
+          AND (c.created_at IS NULL OR c.created_at::date < :since)
+    """), {"since": since}).scalar() or 0
+
+    touched_before = db.execute(text("""
+        SELECT count(DISTINCT r.card_id)::int
+        FROM reviews r
+        JOIN users u ON u.id = r.user_id
+        WHERE u.username = 'default' AND r.review_time::date < :since
+    """), {"since": since}).scalar() or 0
+
+    daily = []
+    deck = cards_before
+    touched = touched_before
+    cursor = since
+    while cursor <= today:
+        key = cursor.isoformat()
+        added = added_by_day.get(cursor, 0)
+        ev = reviews_by_day.get(cursor)
+        first_touched = ev.first_touched if ev else 0
+        deck += added
+        touched += first_touched
+        daily.append({
+            "date": key,
+            "added": added,
+            "reviews": ev.reviews if ev else 0,
+            "reviewed": ev.reviewed if ev else 0,
+            "first_touched": first_touched,
+            "reached_four": ev.reached_four if ev else 0,
+            "total_cards": deck,
+            "touched_total": touched,
+            "untouched_total": deck - touched,
+        })
+        cursor += timedelta(days=1)
+
+    added_in_window = sum(d["added"] for d in daily)
+    first_touched_in_window = sum(d["first_touched"] for d in daily)
+
+    return {
+        "days": horizon,
+        "from": since.isoformat(),
+        "to": today.isoformat(),
+        "total_cards": deck,
+        "touched_total": touched,
+        "untouched_total": deck - touched,
+        "added_in_window": added_in_window,
+        "first_touched_in_window": first_touched_in_window,
+        "untouched_change": added_in_window - first_touched_in_window,
+        "daily": daily,
     }
 
 
